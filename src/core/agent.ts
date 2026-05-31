@@ -1032,7 +1032,7 @@ export class MimoAgent {
     if (msg.includes('401') || msg.includes('Unauthorized')) {
       errorMsg = 'API Key 无效 / API Key invalid. 请运行 mimo init 重新配置 / Run mimo init to reconfigure.';
     } else if (msg.includes('429') || msg.includes('rate_limit') || msg.includes('rate limit')) {
-      errorMsg = '请求频率限制 / Rate limit exceeded. 请稍等片刻后重试 / Please wait a moment and try again.';
+      errorMsg = 'API 请求被拒绝(429) / Request rejected by API. 请检查 API Key、baseUrl 和代理配置是否正确 / Check API key, baseUrl, and proxy config. 运行 mimo init 重新配置 / Run mimo init to reconfigure.';
     } else if (msg.includes('529') || msg.includes('overloaded')) {
       errorMsg = 'API 过载 / API overloaded. 请稍等片刻后重试 / Please wait and retry.';
     } else if (msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND')) {
