@@ -297,15 +297,126 @@ export const SandboxVisualizationFeature: FeatureModule = {
 };
 
 // ═══ Feature 45: Multi-Agent Debate ══════════════════
+interface DebateAnalysis {
+  persona: string;
+  stance: string;
+  arguments: string[];
+  risks: string[];
+  recommendation: string;
+}
+
+function analyzeFromPersona(persona: string, topic: string, code?: string): DebateAnalysis {
+  const lowerPersona = persona.toLowerCase();
+  const topicLower = topic.toLowerCase();
+  const arguments_: string[] = [];
+  const risks: string[] = [];
+  let stance = '';
+  let recommendation = '';
+
+  if (lowerPersona.includes('conservative') || lowerPersona.includes('minimal')) {
+    stance = 'Minimize blast radius — prefer proven patterns';
+    if (/refactor|rewrite|redesign/.test(topicLower)) {
+      arguments_.push('Large refactors introduce regressions — incremental changes are safer');
+      arguments_.push('Existing code is battle-tested in production');
+      risks.push('Premature optimization may not address the real problem');
+    }
+    if (/add|new|feature/.test(topicLower)) {
+      arguments_.push('New features should be gated behind feature flags');
+      arguments_.push('Start with the simplest working implementation');
+      risks.push('Over-engineering the initial version');
+    }
+    arguments_.push('Prioritize backward compatibility');
+    arguments_.push('Write tests before changing behavior');
+    recommendation = 'Make the smallest possible change that solves the problem. Add tests first.';
+  }
+  else if (lowerPersona.includes('pragmatic') || lowerPersona.includes('balanced')) {
+    stance = 'Balance speed and quality — pragmatic trade-offs';
+    arguments_.push('Choose the approach that delivers value fastest while maintaining quality');
+    arguments_.push('Use established patterns from the codebase');
+    if (/performance|optimize|slow/.test(topicLower)) {
+      arguments_.push('Profile before optimizing — measure, don\'t guess');
+      risks.push('Premature optimization without data');
+    }
+    if (/security|auth|encrypt/.test(topicLower)) {
+      arguments_.push('Security is non-negotiable — use proven libraries');
+      risks.push('Don\'t roll your own crypto');
+    }
+    arguments_.push('Consider maintenance burden in 6 months');
+    recommendation = 'Implement with clear abstractions. Test critical paths. Document decisions.';
+  }
+  else if (lowerPersona.includes('innovative') || lowerPersona.includes('bold')) {
+    stance = 'Push boundaries — explore modern approaches';
+    arguments_.push('Consider newer patterns that may be more expressive');
+    if (/api|backend|server/.test(topicLower)) {
+      arguments_.push('Explore type-safe API layers (tRPC, GraphQL codegen)');
+    }
+    if (/ui|frontend|component/.test(topicLower)) {
+      arguments_.push('Consider server components or signals for better performance');
+    }
+    arguments_.push('Use TypeScript strict mode for better compile-time safety');
+    arguments_.push('Automate everything — CI, testing, deployment');
+    risks.push('Newer tech may lack ecosystem maturity');
+    risks.push('Team learning curve may slow initial development');
+    recommendation = 'Prototype with the modern approach. Validate with benchmarks. Migrate incrementally.';
+  }
+  else {
+    stance = `Custom perspective: ${persona}`;
+    arguments_.push(`Analyze from ${persona} viewpoint`);
+    arguments_.push('Consider both short-term and long-term implications');
+    recommendation = `Apply ${persona} principles to evaluate trade-offs`;
+  }
+
+  // Code-specific analysis
+  if (code) {
+    const codeLen = code.split('\n').length;
+    if (codeLen > 100) arguments_.push(`Code is ${codeLen} lines — consider breaking into smaller modules`);
+    if (/TODO|FIXME|HACK/.test(code)) risks.push('Contains TODO/FIXME markers — address before shipping');
+    if (/console\.log|print\(/.test(code)) risks.push('Contains debug logging — remove before production');
+    if (!/test|spec|describe/.test(code) && codeLen > 50) risks.push('No test coverage visible for this code');
+  }
+
+  return { persona, stance, arguments: arguments_, risks, recommendation };
+}
+
 export const MultiAgentDebateFeature: FeatureModule = {
   meta: { id: 'agent-debate', name: 'Multi-Agent Debate', description: 'Multiple agents with different personas debate solutions', category: 'ai', enabled: true, priority: 'P2' },
   getTools() {
     return [{
       name: 'start_debate',
-      definition: { name: 'start_debate', description: 'Start a multi-agent debate on a topic', input_schema: { type: 'object' as const, properties: { topic: { type: 'string' }, personas: { type: 'array', items: { type: 'string' }, description: 'Agent personas (default: conservative, pragmatic, innovative)' } }, required: ['topic'] } },
+      definition: { name: 'start_debate', description: 'Start a multi-agent debate on a topic', input_schema: { type: 'object' as const, properties: { topic: { type: 'string' }, code: { type: 'string', description: 'Optional code context for the debate' }, personas: { type: 'array', items: { type: 'string' }, description: 'Agent personas (default: conservative, pragmatic, innovative)' } }, required: ['topic'] } },
       execute: async (input: any) => {
-        const personas = input.personas || ['Conservative (minimal change)', 'Pragmatic (balanced approach)', 'Innovative (bold approach)'];
-        return { output: `Debate: ${input.topic}\n\n${personas.map((p: string, i: number) => `Agent ${i + 1} [${p}]: Would analyze from ${p.toLowerCase()} perspective`).join('\n\n')}\n\nUse /debate to run the full debate with AI agents.`, isError: false };
+        const personas: string[] = input.personas || ['Conservative (minimal change)', 'Pragmatic (balanced approach)', 'Innovative (bold approach)'];
+        const analyses = personas.map(p => analyzeFromPersona(p, input.topic, input.code));
+
+        const output: string[] = [`=== Multi-Agent Debate: ${input.topic} ===`, ''];
+
+        for (const analysis of analyses) {
+          output.push(`--- Agent: ${analysis.persona} ---`);
+          output.push(`Stance: ${analysis.stance}`);
+          output.push('');
+          output.push('Arguments:');
+          for (const arg of analysis.arguments) output.push(`  + ${arg}`);
+          if (analysis.risks.length > 0) {
+            output.push('Risks:');
+            for (const risk of analysis.risks) output.push(`  ! ${risk}`);
+          }
+          output.push(`Recommendation: ${analysis.recommendation}`);
+          output.push('');
+        }
+
+        // Synthesis: find common ground and key disagreements
+        const allArgs = analyses.flatMap(a => a.arguments);
+        const allRisks = analyses.flatMap(a => a.risks);
+        output.push('=== Synthesis ===');
+        output.push(`Total arguments: ${allArgs.length}, Total risks identified: ${allRisks.length}`);
+        output.push(`Personas consulted: ${analyses.length}`);
+        output.push('');
+        output.push('Key takeaways:');
+        output.push(`  1. ${analyses[0]?.recommendation || 'Consider all perspectives'}`);
+        if (analyses.length > 1) output.push(`  2. ${analyses[analyses.length - 1]?.recommendation || ''}`);
+        if (allRisks.length > 0) output.push(`  3. Address top risk: ${allRisks[0]}`);
+
+        return { output: output.join('\n'), isError: false };
       },
     }];
   },
@@ -390,9 +501,122 @@ export const RegressionTestFeature: FeatureModule = {
   getTools() {
     return [{
       name: 'generate_regression_test',
-      definition: { name: 'generate_regression_test', description: 'Generate a regression test for a bug fix', input_schema: { type: 'object' as const, properties: { bug: { type: 'string', description: 'Bug description' }, fix: { type: 'string', description: 'Fix description' }, file: { type: 'string', description: 'File being tested' } }, required: ['bug'] } },
+      definition: { name: 'generate_regression_test', description: 'Generate a regression test for a bug fix', input_schema: { type: 'object' as const, properties: { bug: { type: 'string', description: 'Bug description' }, fix: { type: 'string', description: 'Fix description (optional)' }, file: { type: 'string', description: 'File being tested (optional)' }, language: { type: 'string', enum: ['typescript', 'javascript', 'python'], description: 'Test language (auto-detected from file)' } }, required: ['bug'] } },
       execute: async (input: any) => {
-        return { output: `Regression test template:\n\`\`\`typescript\ndescribe('${input.file || 'module'}', () => {\n  it('should not regress: ${input.bug}', () => {\n    // Arrange\n    // Act\n    // Assert: verify the bug ${input.bug} no longer occurs\n  });\n});\n\`\`\``, isError: false };
+        const bug = input.bug;
+        const fix = input.fix || '';
+        const file = input.file || '';
+        const lang = input.language || (file.endsWith('.py') ? 'python' : file.endsWith('.ts') ? 'typescript' : 'javascript');
+
+        // Detect testing framework
+        let framework = 'jest';
+        const pkgRaw = await readFileSafe(path.join(process.cwd(), 'package.json'));
+        if (pkgRaw) {
+          try {
+            const pkg = JSON.parse(pkgRaw);
+            const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
+            if (allDeps.vitest) framework = 'vitest';
+            else if (allDeps.jest) framework = 'jest';
+            else if (allDeps.mocha) framework = 'mocha';
+            else if (allDeps['@playwright/test']) framework = 'playwright';
+          } catch { /* use default */ }
+        }
+
+        // Find existing test files for style reference
+        const testPatterns = ['**/*.test.ts', '**/*.spec.ts', '**/*.test.js', '**/*.spec.js', '**/test_*.py'];
+        const existingTests: string[] = [];
+        for (const pattern of testPatterns) {
+          try {
+            const files = await getSourceFiles(process.cwd());
+            const matched = files.filter(f => f.includes('.test.') || f.includes('.spec.') || f.includes('test_'));
+            existingTests.push(...matched.slice(0, 3));
+          } catch { /* skip */ }
+        }
+
+        // Extract function/file name from bug description
+        const funcMatch = bug.match(/`(\w+)`|function\s+(\w+)|(\w+)\(\)/);
+        const funcName = funcMatch?.[1] || funcMatch?.[2] || funcMatch?.[3] || 'targetFunction';
+        const moduleName = file ? path.basename(file, path.extname(file)) : 'module';
+
+        // Generate test based on language/framework
+        const output: string[] = [];
+
+        if (lang === 'python') {
+          output.push(`"""Regression test for: ${bug}"""`);
+          output.push(`import pytest`);
+          if (file) output.push(`from ${moduleName} import *`);
+          output.push('');
+          output.push(`def test_no_regression_${funcName}():`);
+          output.push(`    """Ensure bug does not regress: ${bug}"""`);
+          output.push(`    # Setup: reproduce the conditions that triggered the bug`);
+          output.push(`    # TODO: Replace with actual test data`);
+          output.push(`    test_input = None  # <-- set up input that triggers the bug`);
+          output.push('');
+          output.push(`    # Execute: run the function that was fixed`);
+          if (fix) {
+            output.push(`    # Fix context: ${fix}`);
+          }
+          output.push(`    result = ${funcName}(test_input)  # <-- call fixed function`);
+          output.push('');
+          output.push(`    # Verify: assert the bug no longer occurs`);
+          output.push(`    assert result is not None  # <-- replace with specific assertion`);
+          output.push(`    # assert result == expected_value  # <-- add expected value`);
+        } else {
+          // TypeScript/JavaScript
+          const importLine = framework === 'vitest'
+            ? `import { describe, it, expect } from 'vitest';`
+            : framework === 'mocha'
+            ? `import { expect } from 'chai';`
+            : ``;
+
+          if (importLine) output.push(importLine);
+          if (file) {
+            const importName = moduleName.replace(/[^a-zA-Z0-9]/g, '_');
+            output.push(`import { ${funcName} } from './${moduleName}';`);
+          }
+          output.push('');
+          output.push(`describe('${moduleName}', () => {`);
+          output.push(`  it('should not regress: ${bug.slice(0, 80)}', () => {`);
+          output.push(`    // Arrange: reproduce the conditions that triggered the bug`);
+          output.push(`    // TODO: Replace with actual test data`);
+          output.push(`    const input = {}; // <-- set up input that triggers the bug`);
+          output.push('');
+          output.push(`    // Act: run the function that was fixed`);
+          if (fix) output.push(`    // Fix context: ${fix}`);
+          output.push(`    const result = ${funcName}(input);`);
+          output.push('');
+          output.push(`    // Assert: verify the bug no longer occurs`);
+          output.push(`    expect(result).toBeDefined(); // <-- replace with specific assertion`);
+          output.push(`    // expect(result).toBe(expectedValue); // <-- add expected value`);
+          output.push(`  });`);
+
+          // Add edge case tests based on bug type
+          if (/null|undefined|empty|missing/.test(bug.toLowerCase())) {
+            output.push('');
+            output.push(`  it('should handle null/undefined input gracefully', () => {`);
+            output.push(`    expect(() => ${funcName}(null)).not.toThrow();`);
+            output.push(`    expect(() => ${funcName}(undefined)).not.toThrow();`);
+            output.push(`  });`);
+          }
+          if (/overflow|range|bound|max|min|limit/.test(bug.toLowerCase())) {
+            output.push('');
+            output.push(`  it('should handle boundary values', () => {`);
+            output.push(`    expect(() => ${funcName}(0)).not.toThrow();`);
+            output.push(`    expect(() => ${funcName}(-1)).not.toThrow();`);
+            output.push(`    expect(() => ${funcName}(Number.MAX_SAFE_INTEGER)).not.toThrow();`);
+            output.push(`  });`);
+          }
+
+          output.push(`});`);
+        }
+
+        if (existingTests.length > 0) {
+          output.push('');
+          output.push(`// Reference existing tests for style:`);
+          for (const t of existingTests.slice(0, 3)) output.push(`// - ${path.relative(process.cwd(), t)}`);
+        }
+
+        return { output: output.join('\n'), isError: false };
       },
     }];
   },

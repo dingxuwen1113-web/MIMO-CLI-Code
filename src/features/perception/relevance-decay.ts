@@ -1,5 +1,7 @@
 // ── Feature 7: Contextual Relevance Decay ────────────
-import { FeatureModule } from '../registry';
+import { FeatureModule, FeatureContext } from '../registry';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 
 interface ScoredMessage {
   role: string;
@@ -13,9 +15,28 @@ class RelevanceDecayEngine {
   private currentTopic: string[] = [];
   private readonly DECAY_RATE = 0.95;
   private readonly HALF_LIFE_MS = 10 * 60 * 1000; // 10 minutes
+  private stateFile: string = '';
+
+  async loadState(stateDir: string) {
+    this.stateFile = path.join(stateDir, 'relevance-decay-state.json');
+    try {
+      const raw = await fs.readFile(this.stateFile, 'utf-8');
+      const data = JSON.parse(raw);
+      if (Array.isArray(data.currentTopic)) this.currentTopic = data.currentTopic;
+    } catch { /* no prior state */ }
+  }
+
+  private async saveState() {
+    if (!this.stateFile) return;
+    try {
+      await fs.mkdir(path.dirname(this.stateFile), { recursive: true });
+      await fs.writeFile(this.stateFile, JSON.stringify({ currentTopic: this.currentTopic, updatedAt: Date.now() }));
+    } catch { /* best-effort */ }
+  }
 
   updateTopic(query: string) {
     this.currentTopic = query.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+    this.saveState();
   }
 
   scoreMessages(messages: Array<{ role: string; content: string }>): ScoredMessage[] {
@@ -91,6 +112,10 @@ export const ContextualRelevanceDecayFeature: FeatureModule = {
     category: 'perception',
     enabled: true,
     priority: 'P0',
+  },
+  async init(ctx: FeatureContext) {
+    const stateDir = path.join(ctx.homeDir, '.mimo', 'state');
+    await engine.loadState(stateDir);
   },
   async onEvent(event: string, data: any) {
     if (event === 'user_input') engine.updateTopic(data.input || '');
