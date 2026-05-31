@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "mimo-memory": {
+      "command": "node",
+      "args": ["dist/mcp/memory-server.js"],
+      "env": {
+        "MIMO_MEMORY_DIR": "~/.mimo/memory"
+      }
+    }
+  }
+}

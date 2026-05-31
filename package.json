@@ -1,0 +1,47 @@
+{
+  "name": "mimo-cli-code",
+  "version": "1.0.0",
+  "description": "MIMO CLI Code - Xiaomi ",
+  "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./sdk": "./dist/sdk/index.js"
+  },
+  "bin": {
+    "mimo": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "mcp": "node dist/mcp/memory-server.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rm -rf dist"
+  },
+  "keywords": ["cli", "ai", "coding-agent", "anthropic", "claude"],
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "chalk": "^5.4.1",
+    "commander": "^12.1.0",
+    "diff": "^7.0.0",
+    "dotenv": "^16.4.7",
+    "glob": "^11.0.1",
+    "gray-matter": "^4.0.3",
+    "ora": "^8.1.1",
+    "toml": "^3.0.0",
+    "zod": "^3.24.1"
+  },
+  "optionalDependencies": {
+    "playwright": "^1.49.0"
+  },
+  "devDependencies": {
+    "@types/diff": "^6.0.0",
+    "@types/node": "^22.10.5",
+    "@types/react": "^18.3.18",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^1.6.0"
+  }
+}

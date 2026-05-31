@@ -1,0 +1,194 @@
+// ── Feature 2: Code Pattern DNA ──────────────────────
+import { FeatureModule, FeatureContext } from '../registry';
+import { getSourceFiles, readFileSafe } from '../utils';
+import * as path from 'path';
+
+interface ProjectDNA {
+  namingStyle: 'camelCase' | 'snake_case' | 'PascalCase' | 'mixed';
+  indentStyle: 'tabs' | 'spaces';
+  indentSize: number;
+  quoteStyle: 'single' | 'double' | 'mixed';
+  semicolons: boolean;
+  errorHandling: 'try-catch' | 'result-type' | 'mixed';
+  importStyle: 'named' | 'default' | 'mixed';
+  averageLineLength: number;
+  maxFunctionLength: number;
+  commentDensity: number;
+  typeStrictness: 'strict' | 'moderate' | 'loose';
+  patterns: string[];
+}
+
+class CodeDNAnalyzer {
+  private dna: ProjectDNA | null = null;
+  private analyzed = false;
+
+  async analyze(projectDir: string): Promise<ProjectDNA> {
+    if (this.dna && this.analyzed) return this.dna;
+
+    const files = await getSourceFiles(projectDir);
+    const samples = files.slice(0, 50);
+
+    let camelCount = 0, snakeCount = 0, pascalCount = 0;
+    let tabCount = 0, spaceCount = 0, indentSizes: number[] = [];
+    let singleQ = 0, doubleQ = 0;
+    let semicolons = 0, noSemicolons = 0;
+    let tryCatch = 0, resultType = 0;
+    let totalLines = 0, totalCodeLines = 0, totalCommentLines = 0;
+    let lineLengths: number[] = [];
+    let funcLengths: number[] = [];
+
+    for (const filePath of samples) {
+      const content = await readFileSafe(filePath);
+      if (!content) continue;
+      const lines = content.split('\n');
+      totalLines += lines.length;
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        // Indent detection
+        const indent = line.match(/^(\s+)/)?.[1] || '';
+        if (indent.startsWith('\t')) tabCount++;
+        else if (indent.startsWith('  ')) { spaceCount++; indentSizes.push(indent.length); }
+
+        // Quote detection
+        const singleMatches = (trimmed.match(/(?<!=)'/g) || []).length;
+        const doubleMatches = (trimmed.match(/(?<!=)"/g) || []).length;
+        singleQ += singleMatches;
+        doubleQ += doubleMatches;
+
+        // Semicolons
+        if (trimmed.endsWith(';')) semicolons++;
+        else if (trimmed.match(/^[a-zA-Z]/)) noSemicolons++;
+
+        // Comment detection
+        if (trimmed.startsWith('//') || trimmed.startsWith('#') || trimmed.startsWith('*') || trimmed.startsWith('/*')) {
+          totalCommentLines++;
+        } else {
+          totalCodeLines++;
+        }
+
+        lineLengths.push(line.length);
+
+        // Naming detection
+        const identifiers = trimmed.match(/\b[a-z][a-zA-Z0-9]*\b/g) || [];
+        for (const id of identifiers) {
+          if (id.includes('_')) snakeCount++;
+          else if (id[0] === id[0].toLowerCase()) camelCount++;
+        }
+        const pascalIds = trimmed.match(/\b[A-Z][a-zA-Z0-9]*\b/g) || [];
+        pascalCount += pascalIds.length;
+
+        // Error handling
+        if (trimmed.includes('try') || trimmed.includes('catch')) tryCatch++;
+        if (trimmed.includes('Result<') || trimmed.includes('.unwrap()')) resultType++;
+      }
+
+      // Function length detection
+      const funcMatches = content.match(/(?:function|const\s+\w+\s*=\s*(?:async\s*)?\(|(?:async\s+)?(?:\w+\s*)?\w+\s*\([^)]*\)\s*(?::\s*\w+)?\s*\{)/g) || [];
+      funcLengths.push(...funcMatches.map(() => 0)); // simplified
+    }
+
+    this.dna = {
+      namingStyle: snakeCount > camelCount && snakeCount > pascalCount ? 'snake_case'
+        : pascalCount > camelCount ? 'PascalCase'
+        : camelCount > snakeCount * 2 ? 'camelCase' : 'mixed',
+      indentStyle: tabCount > spaceCount ? 'tabs' : 'spaces',
+      indentSize: indentSizes.length > 0 ? Math.round(indentSizes.reduce((a, b) => a + b, 0) / indentSizes.length) : 2,
+      quoteStyle: singleQ > doubleQ * 1.5 ? 'single' : doubleQ > singleQ * 1.5 ? 'double' : 'mixed',
+      semicolons: semicolons > noSemicolons,
+      errorHandling: resultType > tryCatch * 2 ? 'result-type' : tryCatch > resultType * 2 ? 'try-catch' : 'mixed',
+      importStyle: 'mixed',
+      averageLineLength: lineLengths.length > 0 ? Math.round(lineLengths.reduce((a, b) => a + b, 0) / lineLengths.length) : 80,
+      maxFunctionLength: 50,
+      commentDensity: totalLines > 0 ? Math.round((totalCommentLines / totalLines) * 100) : 0,
+      typeStrictness: 'strict',
+      patterns: [],
+    };
+
+    this.analyzed = true;
+    return this.dna;
+  }
+
+  checkConsistency(code: string): Array<{ line: number; issue: string; suggestion: string }> {
+    if (!this.dna) return [];
+    const issues: Array<{ line: number; issue: string; suggestion: string }> = [];
+    const lines = code.split('\n');
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmed = line.trim();
+
+      // Check quote style
+      if (this.dna.quoteStyle === 'single' && (trimmed.match(/(?<!=)"/g) || []).length > 0) {
+        if (!trimmed.includes('`') && !trimmed.includes('\\"')) {
+          issues.push({ line: i + 1, issue: '使用了双引号', suggestion: '项目惯例使用单引号' });
+        }
+      }
+      if (this.dna.quoteStyle === 'double' && (trimmed.match(/(?<!=)'/g) || []).length > 0) {
+        issues.push({ line: i + 1, issue: '使用了单引号', suggestion: '项目惯例使用双引号' });
+      }
+
+      // Check semicolons
+      if (this.dna.semicolons && trimmed.match(/^[a-zA-Z]/) && !trimmed.endsWith(';') && !trimmed.endsWith('{') && !trimmed.endsWith('}') && !trimmed.endsWith(',') && !trimmed.startsWith('//') && !trimmed.startsWith('import') && !trimmed.startsWith('export')) {
+        issues.push({ line: i + 1, issue: '缺少分号', suggestion: '项目惯例使用分号' });
+      }
+
+      // Check line length
+      if (line.length > this.dna.averageLineLength * 2) {
+        issues.push({ line: i + 1, issue: `行过长 (${line.length} 字符)`, suggestion: '考虑拆分' });
+      }
+    }
+    return issues;
+  }
+
+  getDNA(): ProjectDNA | null { return this.dna; }
+}
+
+const analyzer = new CodeDNAnalyzer();
+
+export const CodePatternDNAFeature: FeatureModule = {
+  meta: {
+    id: 'code-pattern-dna',
+    name: 'Code Pattern DNA',
+    description: 'Analyze project coding conventions and enforce consistency',
+    category: 'perception',
+    enabled: true,
+    priority: 'P0',
+  },
+  async init(ctx: FeatureContext) { await analyzer.analyze(ctx.projectDir); },
+  getTools() {
+    return [
+      {
+        name: 'analyze_dna',
+        definition: {
+          name: 'analyze_dna',
+          description: 'Analyze the project coding conventions (naming, style, patterns)',
+          input_schema: { type: 'object' as const, properties: {} },
+        },
+        execute: async () => {
+          const dna = analyzer.getDNA();
+          return { output: dna ? JSON.stringify(dna, null, 2) : '(not analyzed)', isError: false };
+        },
+      },
+      {
+        name: 'check_code_consistency',
+        definition: {
+          name: 'check_code_consistency',
+          description: 'Check if code follows project conventions',
+          input_schema: { type: 'object' as const, properties: { code: { type: 'string', description: 'Code to check' } }, required: ['code'] },
+        },
+        execute: async (input: any) => {
+          const issues = analyzer.checkConsistency(input.code);
+          return {
+            output: issues.length > 0
+              ? issues.map(i => `L${i.line}: ${i.issue} → ${i.suggestion}`).join('\n')
+              : '代码符合项目规范 ✓',
+            isError: false,
+          };
+        },
+      },
+    ];
+  },
+};
