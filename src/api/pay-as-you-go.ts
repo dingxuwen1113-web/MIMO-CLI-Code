@@ -27,6 +27,7 @@ export class PayAsYouGoAdapter implements ApiAdapter {
     const clientOpts: Record<string, any> = {
       apiKey: config.api.payAsYouGo.apiKey,
       maxRetries: 0,
+      timeout: 120_000,
     };
     if (baseUrl) {
       clientOpts.baseURL = baseUrl;

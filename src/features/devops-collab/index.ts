@@ -32,11 +32,40 @@ interface DeployEntry { id: string; timestamp: string; commit: string; status: '
 
 class DeployWatchdog {
   private deploys: DeployEntry[] = [];
+  private historyFile: string = '';
+  private maxHistory = 100;
+
+  async loadHistory(stateDir: string) {
+    this.historyFile = path.join(stateDir, 'deploy-history.json');
+    try {
+      const raw = await fs.readFile(this.historyFile, 'utf-8');
+      const data = JSON.parse(raw);
+      if (Array.isArray(data)) this.deploys = data.slice(-this.maxHistory);
+    } catch { /* no prior history */ }
+  }
+
+  private async saveHistory() {
+    if (!this.historyFile) return;
+    try {
+      await fs.mkdir(path.dirname(this.historyFile), { recursive: true });
+      await fs.writeFile(this.historyFile, JSON.stringify(this.deploys.slice(-this.maxHistory), null, 2));
+    } catch { /* best-effort */ }
+  }
 
   recordDeploy(commit: string): string {
     const id = `deploy-${Date.now()}`;
     this.deploys.push({ id, timestamp: now_iso(), commit, status: 'deployed' });
+    if (this.deploys.length > this.maxHistory) this.deploys = this.deploys.slice(-this.maxHistory);
+    this.saveHistory();
     return id;
+  }
+
+  rollbackDeploy(id: string): boolean {
+    const deploy = this.deploys.find(d => d.id === id);
+    if (!deploy || deploy.status === 'rolled-back') return false;
+    deploy.status = 'rolled-back';
+    this.saveHistory();
+    return true;
   }
 
   checkHealth(metrics: Record<string, number>): { healthy: boolean; issues: string[] } {
@@ -54,12 +83,38 @@ const watchdog = new DeployWatchdog();
 
 export const DeployWatchdogFeature: FeatureModule = {
   meta: { id: 'deploy-watchdog', name: 'Deploy Rollback Watchdog', description: 'Monitor post-deploy metrics and auto-rollback', category: 'devops', enabled: true, priority: 'P3' },
+  async init(ctx: FeatureContext) {
+    const stateDir = path.join(ctx.homeDir, '.mimo', 'state');
+    await watchdog.loadHistory(stateDir);
+  },
   getTools() {
-    return [{
-      name: 'deploy_history',
-      definition: { name: 'deploy_history', description: 'View deployment history and health status', input_schema: { type: 'object' as const, properties: {} } },
-      execute: async () => ({ output: watchdog.getHistory().map(d => `${d.id} [${d.status}] ${d.commit} at ${d.timestamp}`).join('\n') || '(no deployments)', isError: false }),
-    }];
+    return [
+      {
+        name: 'deploy_history',
+        definition: { name: 'deploy_history', description: 'View deployment history and health status', input_schema: { type: 'object' as const, properties: { limit: { type: 'number', description: 'Max entries to show (default 20)' } } } },
+        execute: async (input: any) => {
+          const history = watchdog.getHistory();
+          const limit = input?.limit || 20;
+          return { output: history.slice(-limit).map(d => `${d.id} [${d.status}] ${d.commit} at ${d.timestamp}`).join('\n') || '(no deployments)', isError: false };
+        },
+      },
+      {
+        name: 'record_deploy',
+        definition: { name: 'record_deploy', description: 'Record a new deployment', input_schema: { type: 'object' as const, properties: { commit: { type: 'string', description: 'Commit hash or version' } }, required: ['commit'] } },
+        execute: async (input: any) => {
+          const id = watchdog.recordDeploy(input.commit);
+          return { output: `Deploy recorded: ${id} (commit: ${input.commit})`, isError: false };
+        },
+      },
+      {
+        name: 'rollback_deploy',
+        definition: { name: 'rollback_deploy', description: 'Mark a deployment as rolled back', input_schema: { type: 'object' as const, properties: { deployId: { type: 'string', description: 'Deploy ID to rollback' } }, required: ['deployId'] } },
+        execute: async (input: any) => {
+          const ok = watchdog.rollbackDeploy(input.deployId);
+          return { output: ok ? `Deploy ${input.deployId} marked as rolled back` : 'Deploy not found or already rolled back', isError: !ok };
+        },
+      },
+    ];
   },
 };
 
@@ -74,10 +129,27 @@ class SupplyChainScanner {
       const pkg = JSON.parse(pkgRaw);
       const deps = { ...pkg.dependencies, ...pkg.devDependencies };
 
-      // Check for known problematic packages
-      const suspicious = ['lodash.merge', 'extend', 'deep-extend']; // example
+      // Known typosquatting and malicious package patterns
+      const suspicious = [
+        'crossenv', 'cross-env.js', 'flatmap-stream', 'event-stream',
+        'lodash.merge', 'extend', 'deep-extend', 'coa', 'rc',
+        'ua-parser-js', 'colors', 'faker', 'nodemailer',
+      ];
+      const suspiciousPatterns = [/^(babelcli|crossenv|mongose|nodemailer)\b/i];
+
       for (const dep of Object.keys(deps)) {
-        if (dep.includes('..') || dep.startsWith('@') === false && dep.includes('/')) {
+        // Direct match against known suspicious packages
+        if (suspicious.includes(dep)) {
+          vulnerabilities.push({ package: dep, severity: 'critical', message: 'Known malicious/suspicious package — remove immediately' });
+        }
+        // Pattern match
+        for (const pat of suspiciousPatterns) {
+          if (pat.test(dep) && !suspicious.includes(dep)) {
+            vulnerabilities.push({ package: dep, severity: 'high', message: 'Possible typosquatting — verify this is the intended package' });
+          }
+        }
+        // Path traversal in package name
+        if (dep.includes('..') || (!dep.startsWith('@') && dep.includes('/'))) {
           vulnerabilities.push({ package: dep, severity: 'warning', message: 'Unusual package name — verify legitimacy' });
         }
       }
@@ -182,10 +254,99 @@ export const PRTemplateFeature: FeatureModule = {
   getTools() {
     return [{
       name: 'learn_pr_style',
-      definition: { name: 'learn_pr_style', description: 'Analyze past PRs to learn team conventions', input_schema: { type: 'object' as const, properties: {} } },
-      execute: async () => {
-        const result = await runCommand('gh pr list --limit 10 --json title,body,labels 2>/dev/null || echo "gh CLI not available"');
-        return { output: result.stdout ? `Recent PRs:\n${result.stdout.slice(0, 1000)}` : 'GitHub CLI not available', isError: false };
+      definition: { name: 'learn_pr_style', description: 'Analyze past PRs to learn team conventions', input_schema: { type: 'object' as const, properties: { limit: { type: 'number', description: 'Number of PRs to analyze (default 20)' } } } },
+      execute: async (input: any) => {
+        const limit = input?.limit || 20;
+        const result = await runCommand(`gh pr list --limit ${limit} --json title,body,labels,author 2>/dev/null`);
+        if (!result.stdout || result.stdout.includes('gh CLI not available')) {
+          return { output: 'GitHub CLI not available. Install with: brew install gh (or see https://cli.github.com)', isError: false };
+        }
+
+        let prs: Array<{ title: string; body: string; labels: Array<{ name: string }>; author: { login: string } }> = [];
+        try {
+          prs = JSON.parse(result.stdout);
+        } catch {
+          return { output: `Could not parse PR data:\n${result.stdout.slice(0, 500)}`, isError: true };
+        }
+
+        if (prs.length === 0) return { output: 'No PRs found to analyze.', isError: false };
+
+        // Analyze title patterns
+        const prefixes: Record<string, number> = {};
+        const titleLengths: number[] = [];
+        for (const pr of prs) {
+          titleLengths.push(pr.title.length);
+          const prefixMatch = pr.title.match(/^(\w+)(?:\([^)]+\))?:/);
+          if (prefixMatch) {
+            const prefix = prefixMatch[1].toLowerCase();
+            prefixes[prefix] = (prefixes[prefix] || 0) + 1;
+          }
+        }
+
+        // Analyze body structure
+        const bodyLengths: number[] = [];
+        const sections = new Set<string>();
+        for (const pr of prs) {
+          if (pr.body) {
+            bodyLengths.push(pr.body.length);
+            const headers = pr.body.match(/^##\s+(.+)$/gm);
+            if (headers) headers.forEach(h => sections.add(h.replace(/^##\s+/, '')));
+          }
+        }
+
+        // Analyze label usage
+        const labelCounts: Record<string, number> = {};
+        for (const pr of prs) {
+          for (const label of (pr.labels || [])) {
+            labelCounts[label.name] = (labelCounts[label.name] || 0) + 1;
+          }
+        }
+
+        const avgTitleLen = titleLengths.length > 0 ? Math.round(titleLengths.reduce((a, b) => a + b, 0) / titleLengths.length) : 0;
+        const avgBodyLen = bodyLengths.length > 0 ? Math.round(bodyLengths.reduce((a, b) => a + b, 0) / bodyLengths.length) : 0;
+        const topPrefixes = Object.entries(prefixes).sort((a, b) => b[1] - a[1]).slice(0, 5);
+        const topLabels = Object.entries(labelCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+        const template: string[] = ['## Learned PR Conventions', ''];
+        template.push(`Analyzed ${prs.length} PRs:`);
+        template.push('');
+        if (topPrefixes.length > 0) {
+          template.push('### Title Prefixes');
+          for (const [prefix, count] of topPrefixes) {
+            template.push(`  - \`${prefix}:\` — used in ${count}/${prs.length} PRs`);
+          }
+          template.push('');
+        }
+        template.push(`### Title Length: avg ${avgTitleLen} chars`);
+        template.push(`### Body Length: avg ${avgBodyLen} chars`);
+        template.push('');
+        if (sections.size > 0) {
+          template.push('### Common Body Sections');
+          for (const s of sections) template.push(`  - ${s}`);
+          template.push('');
+        }
+        if (topLabels.length > 0) {
+          template.push('### Common Labels');
+          for (const [label, count] of topLabels) template.push(`  - \`${label}\` — ${count} PRs`);
+        }
+
+        // Generate suggested template
+        const suggestedPrefix = topPrefixes[0]?.[0] || 'feat';
+        template.push('');
+        template.push('### Suggested Template');
+        template.push('```');
+        template.push(`${suggestedPrefix}(scope): concise description`);
+        template.push('');
+        if (sections.size > 0) {
+          for (const s of sections) template.push(`## ${s}`);
+        } else {
+          template.push('## Summary');
+          template.push('## Changes');
+          template.push('## Test plan');
+        }
+        template.push('```');
+
+        return { output: template.join('\n'), isError: false };
       },
     }];
   },
@@ -211,14 +372,97 @@ export const OwnershipTrackerFeature: FeatureModule = {
 };
 
 // ═══ Feature 33: Async Collaboration Mode ════════════
+interface CollabSession {
+  id: string;
+  name: string;
+  startedAt: string;
+  lastActivity: string;
+  status: 'active' | 'idle' | 'completed';
+  task: string;
+  changes: string[];
+}
+
+class CollabManager {
+  private sessions: Map<string, CollabSession> = new Map();
+
+  startSession(name: string, task: string): string {
+    const id = `collab-${Date.now()}`;
+    this.sessions.set(id, { id, name, startedAt: now_iso(), lastActivity: now_iso(), status: 'active', task, changes: [] });
+    return id;
+  }
+
+  updateSession(id: string, changes?: string[]) {
+    const session = this.sessions.get(id);
+    if (!session) return;
+    session.lastActivity = now_iso();
+    if (changes) session.changes.push(...changes);
+  }
+
+  completeSession(id: string) {
+    const session = this.sessions.get(id);
+    if (session) {
+      session.status = 'completed';
+      session.lastActivity = now_iso();
+    }
+  }
+
+  getStatus(): { active: CollabSession[]; idle: CollabSession[]; completed: CollabSession[] } {
+    const all = Array.from(this.sessions.values());
+    return {
+      active: all.filter(s => s.status === 'active'),
+      idle: all.filter(s => s.status === 'idle'),
+      completed: all.filter(s => s.status === 'completed').slice(-5),
+    };
+  }
+}
+
+const collabManager = new CollabManager();
+
 export const AsyncCollabFeature: FeatureModule = {
   meta: { id: 'async-collab', name: 'Async Collaboration Mode', description: 'Multi-user session contributions', category: 'collaboration', enabled: true, priority: 'P3' },
   getTools() {
-    return [{
-      name: 'collab_status',
-      definition: { name: 'collab_status', description: 'Check async collaboration status', input_schema: { type: 'object' as const, properties: {} } },
-      execute: async () => ({ output: 'Async collaboration mode ready. Use session forking for parallel exploration.', isError: false }),
-    }];
+    return [
+      {
+        name: 'collab_status',
+        definition: { name: 'collab_status', description: 'Check async collaboration status and active sessions', input_schema: { type: 'object' as const, properties: {} } },
+        execute: async () => {
+          const status = collabManager.getStatus();
+          const lines: string[] = ['=== Collaboration Status ===', ''];
+          if (status.active.length > 0) {
+            lines.push(`Active sessions (${status.active.length}):`);
+            for (const s of status.active) lines.push(`  [${s.name}] ${s.task} — ${s.changes.length} changes`);
+          }
+          if (status.idle.length > 0) {
+            lines.push(`Idle sessions (${status.idle.length}):`);
+            for (const s of status.idle) lines.push(`  [${s.name}] ${s.task}`);
+          }
+          if (status.completed.length > 0) {
+            lines.push(`Recently completed (${status.completed.length}):`);
+            for (const s of status.completed) lines.push(`  [${s.name}] ${s.task} — ${s.changes.length} changes`);
+          }
+          if (status.active.length === 0 && status.idle.length === 0 && status.completed.length === 0) {
+            lines.push('No collaboration sessions. Use start_collab_session to begin.');
+          }
+          return { output: lines.join('\n'), isError: false };
+        },
+      },
+      {
+        name: 'start_collab_session',
+        definition: { name: 'start_collab_session', description: 'Start an async collaboration session', input_schema: { type: 'object' as const, properties: { name: { type: 'string', description: 'Session name' }, task: { type: 'string', description: 'Task description' } }, required: ['name', 'task'] } },
+        execute: async (input: any) => {
+          const id = collabManager.startSession(input.name, input.task);
+          return { output: `Collaboration session started: ${input.name} (${id})\nTask: ${input.task}`, isError: false };
+        },
+      },
+      {
+        name: 'complete_collab_session',
+        definition: { name: 'complete_collab_session', description: 'Mark a collaboration session as completed', input_schema: { type: 'object' as const, properties: { sessionId: { type: 'string' } }, required: ['sessionId'] } },
+        execute: async (input: any) => {
+          collabManager.completeSession(input.sessionId);
+          return { output: `Session ${input.sessionId} marked as completed.`, isError: false };
+        },
+      },
+    ];
   },
 };
 
