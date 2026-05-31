@@ -212,7 +212,16 @@ class SessionForker {
     const b1 = this.branches.get(id1);
     const b2 = this.branches.get(id2);
     if (!b1 || !b2) return { branch1: 0, branch2: 0, common: 0 };
-    return { branch1: b1.messages.length, branch2: b2.messages.length, common: 0 };
+    const minLen = Math.min(b1.messages.length, b2.messages.length);
+    let common = 0;
+    for (let i = 0; i < minLen; i++) {
+      if (b1.messages[i].role === b2.messages[i].role && b1.messages[i].content === b2.messages[i].content) {
+        common++;
+      } else {
+        break;
+      }
+    }
+    return { branch1: b1.messages.length, branch2: b2.messages.length, common };
   }
 }
 
@@ -222,8 +231,12 @@ export const SessionForkingFeature: FeatureModule = {
   meta: { id: 'session-forking', name: 'Session Forking', description: 'Branch conversations to try different approaches', category: 'devex', enabled: true, priority: 'P1' },
   getTools() {
     return [
-      { name: 'fork_session', definition: { name: 'fork_session', description: 'Create a branch of the current conversation', input_schema: { type: 'object' as const, properties: { name: { type: 'string', description: 'Branch name' } }, required: ['name'] } },
-        execute: async (input: any) => { const id = forker.fork('current', input.name, []); return { output: `Created session fork: ${input.name} (${id})`, isError: false }; } },
+      { name: 'fork_session', definition: { name: 'fork_session', description: 'Create a branch of the current conversation', input_schema: { type: 'object' as const, properties: { name: { type: 'string', description: 'Branch name' }, messages: { type: 'array', items: { type: 'object', properties: { role: { type: 'string' }, content: { type: 'string' } } }, description: 'Messages to snapshot (optional, defaults to empty branch)' } }, required: ['name'] } },
+        execute: async (input: any) => {
+          const msgs = Array.isArray(input.messages) ? input.messages : [];
+          const id = forker.fork('current', input.name, msgs);
+          return { output: `Created session fork: ${input.name} (${id}) with ${msgs.length} messages`, isError: false };
+        } },
       { name: 'list_forks', definition: { name: 'list_forks', description: 'List all session forks', input_schema: { type: 'object' as const, properties: {} } },
         execute: async () => { const branches = forker.listBranches(); return { output: branches.length > 0 ? branches.map(b => `${b.id}: ${b.name} (${b.messages.length} messages)`).join('\n') : '(no forks)', isError: false }; } },
     ];
@@ -237,10 +250,70 @@ class MultiModalProcessor {
   async processImage(imagePath: string): Promise<{ type: string; description: string; extractedText: string }> {
     const ext = path.extname(imagePath).toLowerCase();
     const stat = await fs.stat(imagePath).catch(() => null);
+    const sizeKB = stat ? (stat.size / 1024).toFixed(1) : '?';
+
+    let dimensions = '';
+    let extractedText = '';
+
+    try {
+      const buffer = await fs.readFile(imagePath);
+
+      // PNG: width at bytes 16-19, height at 20-23
+      if (ext === '.png' && buffer.length > 24 && buffer[0] === 0x89 && buffer[1] === 0x50) {
+        const w = buffer.readUInt32BE(16);
+        const h = buffer.readUInt32BE(20);
+        dimensions = `${w}x${h}`;
+      }
+      // JPEG: scan for SOF marker
+      else if ((ext === '.jpg' || ext === '.jpeg') && buffer[0] === 0xFF && buffer[1] === 0xD8) {
+        let offset = 2;
+        while (offset < buffer.length - 1) {
+          if (buffer[offset] !== 0xFF) break;
+          const marker = buffer[offset + 1];
+          if (marker === 0xC0 || marker === 0xC2) {
+            const h = buffer.readUInt16BE(offset + 5);
+            const w = buffer.readUInt16BE(offset + 7);
+            dimensions = `${w}x${h}`;
+            break;
+          }
+          const segLen = buffer.readUInt16BE(offset + 2);
+          offset += 2 + segLen;
+        }
+      }
+      // GIF: width at bytes 6-7, height at 8-9
+      else if (ext === '.gif' && buffer[0] === 0x47 && buffer[1] === 0x49) {
+        const w = buffer.readUInt16LE(6);
+        const h = buffer.readUInt16LE(8);
+        dimensions = `${w}x${h}`;
+      }
+      // SVG: parse text content
+      else if (ext === '.svg') {
+        const svgContent = buffer.toString('utf-8');
+        const textMatches = svgContent.match(/<text[^>]*>([^<]+)<\/text>/g);
+        if (textMatches) {
+          extractedText = textMatches.map(m => m.replace(/<[^>]+>/g, '').trim()).filter(Boolean).join(' ');
+        }
+        const viewBox = svgContent.match(/viewBox=["']([^"']+)["']/);
+        if (viewBox) dimensions = viewBox[1];
+        else {
+          const wMatch = svgContent.match(/width=["'](\d+)["']/);
+          const hMatch = svgContent.match(/height=["'](\d+)["']/);
+          if (wMatch && hMatch) dimensions = `${wMatch[1]}x${hMatch[1]}`;
+        }
+      }
+      // WebP: dimensions at bytes 22-25 (lossy) or VP8 chunk
+      else if (ext === '.webp' && buffer[8] === 0x57 && buffer[9] === 0x45) {
+        const w = buffer.readUInt16LE(26) + 1;
+        const h = buffer.readUInt16LE(28) + 1;
+        dimensions = `${w}x${h}`;
+      }
+    } catch { /* cannot read binary */ }
+
+    const dimStr = dimensions ? ` ${dimensions}` : '';
     return {
-      type: ext,
-      description: `Image file: ${path.basename(imagePath)} (${stat ? (stat.size / 1024).toFixed(1) : '?'}KB)`,
-      extractedText: '[Image content would be processed by vision model]',
+      type: ext.replace('.', ''),
+      description: `Image file: ${path.basename(imagePath)} (${sizeKB}KB${dimStr})`,
+      extractedText: extractedText || `[${ext.replace('.', '').toUpperCase()} image, ${sizeKB}KB${dimStr ? ', ' + dimensions : ''}]`,
     };
   }
 
