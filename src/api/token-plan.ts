@@ -31,6 +31,7 @@ export class TokenPlanAdapter implements ApiAdapter {
 
     const clientOpts: Record<string, any> = {
       apiKey: config.api.tokenPlan.apiKey,
+      timeout: 120_000, // 2 分钟超时，避免 AI 推理请求被过早中断
     };
     const baseUrl = config.api.tokenPlan.baseUrl || process.env.ANTHROPIC_BASE_URL;
     if (baseUrl) {
