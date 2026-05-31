@@ -181,6 +181,7 @@ export class TokenPlanAdapter implements ApiAdapter {
       this.trackUsage(finalMessage.usage);
       return finalMessage;
     } catch (err: any) {
+      // If streaming gets 429, fall back to non-streaming chat() which has SDK retry logic
       if (err?.status === 429) {
         debug('Streaming got 429, falling back to non-streaming (with auto model downgrade)');
         return this.chat(messages, tools, systemPrompt, options);
