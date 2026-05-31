@@ -1032,9 +1032,9 @@ export class MimoAgent {
     if (msg.includes('401') || msg.includes('Unauthorized')) {
       errorMsg = 'API Key 无效 / API Key invalid. 请运行 mimo init 重新配置 / Run mimo init to reconfigure.';
     } else if (msg.includes('429') || msg.includes('rate_limit') || msg.includes('rate limit')) {
-      // 静默重试，不打印警告
+      errorMsg = '请求频率限制 / Rate limit exceeded. 请稍等片刻后重试 / Please wait a moment and try again.';
     } else if (msg.includes('529') || msg.includes('overloaded')) {
-      // 静默重试
+      errorMsg = 'API 过载 / API overloaded. 请稍等片刻后重试 / Please wait and retry.';
     } else if (msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND')) {
       errorMsg = '无法连接 API / Cannot connect to API. 请检查网络和端点配置 / Check network and endpoint config.';
     } else if (msg.includes('timeout') || msg.includes('ETIMEDOUT')) {

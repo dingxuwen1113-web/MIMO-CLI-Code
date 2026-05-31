@@ -1,6 +1,9 @@
 // ── Rate Limiter: Global request queue with 429 retry ───────
 // All API calls go through enqueue() — it waits for cooldown,
 // enforces intervals, and retries 429s automatically.
+//
+// Thread safety: wait() uses a promise-chain mutex so concurrent
+// enqueue() calls are serialized and never exceed the rate limit.
 
 export interface RateLimiterConfig {
   requestsPerMinute: number;
@@ -30,6 +33,9 @@ export class RateLimiter {
   private totalWaitMs: number = 0;
   private totalRetries: number = 0;
 
+  // ── Mutex: serialize concurrent wait() calls ──
+  private queueChain: Promise<void> = Promise.resolve();
+
   constructor(config: Partial<RateLimiterConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
   }
@@ -45,6 +51,7 @@ export class RateLimiter {
     let lastError: any = null;
 
     for (let attempt = 0; attempt <= this.config.maxRetries; attempt++) {
+      // wait() is mutex-serialized — no two calls can pass the rate limit check simultaneously
       await this.wait();
 
       try {
@@ -54,19 +61,22 @@ export class RateLimiter {
       } catch (err: any) {
         lastError = err;
 
-        if (!this.is429(err)) {
+        // __noRetry flag: caller explicitly says not to retry (e.g., partial stream already sent)
+        if (err.__noRetry || !this.is429(err)) {
           throw err;
         }
 
-        // Extract Retry-After header
+        // Extract Retry-After header from the 429 response
         const retryAfterSec = this.extractRetryAfter(err);
         this.backoff(retryAfterSec && retryAfterSec > 0 ? retryAfterSec : undefined);
         this.totalRetries++;
 
         if (attempt < this.config.maxRetries) {
-          const waitMs = this.getRetryDelay(retryAfterSec);
-          options?.onRetry?.(attempt + 1, waitMs);
-          await this.sleep(waitMs);
+          // Notify caller about the retry
+          const cooldownMs = this.getRetryDelay(retryAfterSec);
+          options?.onRetry?.(attempt + 1, cooldownMs);
+          // The cooldown is already set by backoff() above.
+          // The next loop iteration's wait() will respect cooldownUntil — no extra sleep needed.
         }
       }
     }
@@ -77,8 +87,21 @@ export class RateLimiter {
 
   /**
    * Wait until it's safe to make a request.
+   * Uses a promise-chain mutex to prevent concurrent calls from
+   * both passing the rate limit check before either records its timestamp.
    */
   async wait(): Promise<void> {
+    // Chain onto the previous wait — each call runs sequentially
+    const myTurn = this.queueChain.then(() => this.doWait());
+    // Keep the chain alive even if this call throws
+    this.queueChain = myTurn.catch(() => {});
+    await myTurn;
+  }
+
+  /**
+   * Internal wait logic — runs serialized via the mutex.
+   */
+  private async doWait(): Promise<void> {
     const now = Date.now();
 
     // 1. Respect cooldown from previous 429
@@ -110,7 +133,7 @@ export class RateLimiter {
       }
     }
 
-    // Record this request
+    // Record this request (after mutex ensures we're the only one checking)
     this.lastRequestTime = Date.now();
     this.requestTimestamps.push(this.lastRequestTime);
   }
@@ -182,7 +205,6 @@ export class RateLimiter {
     if (retryAfterSec && retryAfterSec > 0) {
       return retryAfterSec * 1000 + 1000;
     }
-    // Exponential backoff matching the cooldown
     return Math.min(
       this.config.cooldownBaseMs * Math.pow(this.config.cooldownMultiplier, this.cooldownLevel - 1),
       this.config.cooldownMaxMs
@@ -205,13 +227,21 @@ export class RateLimiter {
 
 let globalLimiter: RateLimiter | null = null;
 
+/**
+ * Get or create the global rate limiter singleton.
+ * Config is only applied on first creation. To change config,
+ * call resetGlobalRateLimiter() first.
+ */
 export function getGlobalRateLimiter(config?: Partial<RateLimiterConfig>): RateLimiter {
   if (!globalLimiter) {
-    globalLimiter = new RateLimiter(config);
+    globalLimiter = new RateLimiter(config ?? DEFAULT_CONFIG);
   }
   return globalLimiter;
 }
 
+/**
+ * Reset the global rate limiter (for testing or config changes).
+ */
 export function resetGlobalRateLimiter(): void {
   globalLimiter = null;
 }

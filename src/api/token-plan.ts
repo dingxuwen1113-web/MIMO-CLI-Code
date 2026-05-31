@@ -119,9 +119,13 @@ export class TokenPlanAdapter implements ApiAdapter {
     const limiter = getGlobalRateLimiter();
     try {
       const finalMessage = await limiter.enqueue(async () => {
+        let textEmitted = false;
         const stream = this.client.messages.stream(streamParams);
 
-        stream.on('text', (text) => callbacks.onText?.(text));
+        stream.on('text', (text) => {
+          textEmitted = true;
+          callbacks.onText?.(text);
+        });
         stream.on('thinking', (thinkingDelta: string, _snapshot: string) => {
           callbacks.onThinking?.(thinkingDelta);
         });
@@ -134,11 +138,23 @@ export class TokenPlanAdapter implements ApiAdapter {
           }
         });
 
-        return stream.finalMessage();
-      }, { onRetry: (attempt, delayMs) => {
-        const sec = Math.round(delayMs / 1000);
-        process.stdout.write(`\r\x1b[K  rate limited, retry ${attempt}/5, waiting ${sec}s...\r`);
-      }});
+        try {
+          return await stream.finalMessage();
+        } catch (innerErr: any) {
+          if (textEmitted && (innerErr?.status === 429 || String(innerErr?.message).includes('429'))) {
+            // Text was already streamed to the user — don't retry, it would duplicate
+            const err = new Error('429_rate_limit: Rate limit during streaming (partial response already sent).');
+            (err as any).__noRetry = true;
+            throw err;
+          }
+          throw innerErr;
+        }
+      }, {
+        onRetry: (attempt, delayMs) => {
+          const sec = Math.round(delayMs / 1000);
+          process.stdout.write(`\r\x1b[K  rate limited, retry ${attempt}/5, waiting ${sec}s...\r`);
+        },
+      });
 
       this.trackUsage(finalMessage.usage);
       return finalMessage;
