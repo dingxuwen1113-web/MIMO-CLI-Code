@@ -80,8 +80,13 @@ export async function loadConfig(cliOptions: any = {}): Promise<MimoConfig> {
   if (process.env.MIMO_MODEL) config.api.model = process.env.MIMO_MODEL as ModelId;
   if (process.env.MIMO_MODE) config.agent.mode = process.env.MIMO_MODE as AgentMode;
   if (process.env.ANTHROPIC_BASE_URL && process.env.ANTHROPIC_BASE_URL.trim()) {
-    config.api.payAsYouGo.baseUrl = process.env.ANTHROPIC_BASE_URL;
-    config.api.tokenPlan.baseUrl = process.env.ANTHROPIC_BASE_URL;
+    // Only use env var if config file doesn't already have a baseUrl
+    if (!config.api.payAsYouGo.baseUrl) {
+      config.api.payAsYouGo.baseUrl = process.env.ANTHROPIC_BASE_URL;
+    }
+    if (!config.api.tokenPlan.baseUrl) {
+      config.api.tokenPlan.baseUrl = process.env.ANTHROPIC_BASE_URL;
+    }
   }
 
   // Validate the merged config and warn about issues
