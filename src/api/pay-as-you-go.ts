@@ -2,8 +2,6 @@ import Anthropic from '@anthropic-ai/sdk';
 import createDebug from 'debug';
 import { MimoConfig } from '../config/schema';
 import { ApiAdapter, BudgetInfo, UsageStats, StreamCallbacks } from './types';
-import { getGlobalRateLimiter } from './rate-limiter';
-import { getSharedHttpAgents } from './http-client';
 
 const debug = createDebug('mimo:api');
 
@@ -28,13 +26,11 @@ export class PayAsYouGoAdapter implements ApiAdapter {
     this.config = config;
     const baseUrl = config.api.payAsYouGo.baseUrl;
 
-    const { httpAgent, httpsAgent } = getSharedHttpAgents();
+    // Use SDK's built-in retry logic (like Claude Code/Codex)
     const clientOpts: Record<string, any> = {
       apiKey: config.api.payAsYouGo.apiKey,
-      maxRetries: 0,
+      maxRetries: 2,        // SDK handles 429 retries automatically
       timeout: 120_000,
-      httpAgent,
-      httpsAgent,
     };
     if (baseUrl) {
       clientOpts.baseURL = baseUrl;
@@ -77,11 +73,8 @@ export class PayAsYouGoAdapter implements ApiAdapter {
       createParams.max_tokens = Math.max(maxTokens, 64000);
     }
 
-    const limiter = getGlobalRateLimiter();
     try {
-      const response = await limiter.enqueue(
-        () => this.client.messages.create(createParams),
-      );
+      const response = await this.client.messages.create(createParams);
       this.trackUsage(model, response.usage);
       return response;
     } catch (err: any) {
@@ -89,9 +82,7 @@ export class PayAsYouGoAdapter implements ApiAdapter {
         debug('mimo-v2.5-pro got 429, downgrading to mimo-v2.5');
         createParams.model = 'mimo-v2.5';
         try {
-          const response = await limiter.enqueue(
-            () => this.client.messages.create(createParams),
-          );
+          const response = await this.client.messages.create(createParams);
           this.trackUsage('mimo-v2.5', response.usage);
           return response;
         } catch (retryErr: any) {
@@ -130,57 +121,62 @@ export class PayAsYouGoAdapter implements ApiAdapter {
       streamParams.max_tokens = Math.max(maxTokens, 64000);
     }
 
-    const limiter = getGlobalRateLimiter();
     try {
-      const finalMessage = await limiter.enqueue(async () => {
-        let textEmitted = false;
-        const stream = this.client.messages.stream(streamParams);
+      let textEmitted = false;
+      const stream = this.client.messages.stream(streamParams);
 
-        // Buffer thinking output — render once at block end, not per-delta
-        let thinkingBuffer = '';
+      // Stream thinking in real-time for smooth display
+      let thinkingBuffer = '';
+      let thinkingFlushTimer: NodeJS.Timeout | null = null;
+      const FLUSH_INTERVAL = 50;
 
-        stream.on('text', (text) => {
-          textEmitted = true;
-          callbacks.onText?.(text);
-        });
-
-        stream.on('thinking', (thinkingDelta: string) => {
-          thinkingBuffer += thinkingDelta;
-        });
-
-        stream.on('contentBlock', (block) => {
-          if (block.type === 'tool_use') {
-            callbacks.onToolUse?.(block as Anthropic.ToolUseBlock);
-          }
-          // Flush accumulated thinking when the block ends
-          if (block.type === 'thinking' && thinkingBuffer) {
-            callbacks.onThinking?.(thinkingBuffer);
-            thinkingBuffer = '';
-          }
-        });
-
-        try {
-          return await stream.finalMessage();
-        } catch (innerErr: any) {
-          if (textEmitted && innerErr?.status === 429) {
-            const err = new Error('429_rate_limit: Rate limit during streaming (partial response already sent).');
-            (err as any).__noRetry = true;
-            throw err;
-          }
-          throw innerErr;
+      const flushThinking = () => {
+        if (thinkingBuffer) {
+          callbacks.onThinking?.(thinkingBuffer);
+          thinkingBuffer = '';
         }
-      }, {
-        onRetry: (attempt, delayMs) => {
-          const sec = Math.round(delayMs / 1000);
-          process.stdout.write(`\r\x1b[K  rate limited, retry ${attempt}/5, waiting ${sec}s...\r`);
-        },
+        thinkingFlushTimer = null;
+      };
+
+      stream.on('text', (text) => {
+        textEmitted = true;
+        flushThinking();
+        callbacks.onText?.(text);
       });
 
-      this.trackUsage(model, finalMessage.usage);
-      return finalMessage;
+      stream.on('thinking', (thinkingDelta: string) => {
+        thinkingBuffer += thinkingDelta;
+        if (!thinkingFlushTimer) {
+          thinkingFlushTimer = setTimeout(flushThinking, FLUSH_INTERVAL);
+        }
+      });
+
+      stream.on('contentBlock', (block) => {
+        if (block.type === 'tool_use') {
+          callbacks.onToolUse?.(block as Anthropic.ToolUseBlock);
+        }
+        if (thinkingFlushTimer) {
+          clearTimeout(thinkingFlushTimer);
+          thinkingFlushTimer = null;
+        }
+        flushThinking();
+      });
+
+      try {
+        const finalMessage = await stream.finalMessage();
+        this.trackUsage(model, finalMessage.usage);
+        return finalMessage;
+      } catch (innerErr: any) {
+        if (textEmitted && innerErr?.status === 429) {
+          const err = new Error('429_rate_limit: Partial response already sent.');
+          (err as any).__noRetry = true;
+          throw err;
+        }
+        throw innerErr;
+      }
     } catch (err: any) {
       if (err?.status === 429) {
-        debug('Streaming got 429, falling back to non-streaming (with auto model downgrade)');
+        debug('Streaming got 429, falling back to non-streaming');
         return this.chat(messages, tools, systemPrompt, options);
       }
       throw this.wrapApiError(err, model);
