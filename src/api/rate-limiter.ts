@@ -18,10 +18,10 @@ export interface RateLimiterConfig {
 const DEFAULT_CONFIG: RateLimiterConfig = {
   requestsPerMinute: 60,      // 60 RPM — standard API tier
   minIntervalMs: 0,           // no artificial delay between requests
-  cooldownBaseMs: 5000,       // 429 -> wait 5s (was 30s)
-  cooldownMaxMs: 30000,       // max wait 30s (was 60s)
-  cooldownMultiplier: 2,      // 5s -> 10s -> 20s -> 30s
-  maxRetries: 5,              // retry up to 5 times on 429 (was 3)
+  cooldownBaseMs: 1000,       // 429 -> wait 1s first (fast retry)
+  cooldownMaxMs: 10000,       // max wait 10s (reduced from 30s)
+  cooldownMultiplier: 2,      // 1s -> 2s -> 4s -> 8s -> 10s
+  maxRetries: 3,              // retry up to 3 times (reduced from 5)
 };
 
 export class RateLimiter {
