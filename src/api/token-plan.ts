@@ -138,27 +138,44 @@ export class TokenPlanAdapter implements ApiAdapter {
         let textEmitted = false;
         const stream = this.client.messages.stream(streamParams);
 
-        // Buffer thinking output — render once at block end, not per-delta
+        // Stream thinking in real-time (not buffered) for smooth display
         let thinkingBuffer = '';
+        let thinkingFlushTimer: NodeJS.Timeout | null = null;
+        const FLUSH_INTERVAL = 50; // Flush every 50ms for smooth output
+
+        const flushThinking = () => {
+          if (thinkingBuffer) {
+            callbacks.onThinking?.(thinkingBuffer);
+            thinkingBuffer = '';
+          }
+          thinkingFlushTimer = null;
+        };
 
         stream.on('text', (text) => {
           textEmitted = true;
+          // Flush any pending thinking before switching to text
+          flushThinking();
           callbacks.onText?.(text);
         });
 
         stream.on('thinking', (thinkingDelta: string) => {
           thinkingBuffer += thinkingDelta;
+          // Flush thinking periodically for smooth display
+          if (!thinkingFlushTimer) {
+            thinkingFlushTimer = setTimeout(flushThinking, FLUSH_INTERVAL);
+          }
         });
 
         stream.on('contentBlock', (block) => {
           if (block.type === 'tool_use') {
             callbacks.onToolUse?.(block as Anthropic.ToolUseBlock);
           }
-          // Flush accumulated thinking when the block ends
-          if (block.type === 'thinking' && thinkingBuffer) {
-            callbacks.onThinking?.(thinkingBuffer);
-            thinkingBuffer = '';
+          // Flush any remaining thinking when block ends
+          if (thinkingFlushTimer) {
+            clearTimeout(thinkingFlushTimer);
+            thinkingFlushTimer = null;
           }
+          flushThinking();
         });
 
         try {
@@ -174,7 +191,7 @@ export class TokenPlanAdapter implements ApiAdapter {
       }, {
         onRetry: (attempt, delayMs) => {
           const sec = Math.round(delayMs / 1000);
-          process.stdout.write(`\r\x1b[K  rate limited, retry ${attempt}/5, waiting ${sec}s...\r`);
+          process.stdout.write(`\r\x1b[K  rate limited, retry ${attempt}/3, waiting ${sec}s...\r`);
         },
       });
 
