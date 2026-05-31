@@ -617,3 +617,217 @@ export const allComputerTools: ToolDefinition[] = [
   computerListWindowsTool,
   computerAutoTool,
 ];
+
+// ── 终极CLI系统 (一个人抵得上千人公司) ─────────────────────────────────
+
+export const ultimateSolveTool: ToolDefinition = {
+  name: 'ultimate_solve',
+  description:
+    '🌟 ULTIMATE PROBLEM SOLVER: One person = 1000-person company! ' +
+    'This is the MOST POWERFUL tool that can solve ANY problem: ' +
+    '- Simple math (1+1=2) to complex calculations ' +
+    '- Software development (full-stack) ' +
+    '- Data science and AI ' +
+    '- Game development ' +
+    '- Finance and business ' +
+    '- Healthcare and science ' +
+    '- Design and creativity ' +
+    '- And ANYTHING you can imagine! ' +
+    'Just describe what you want in natural language: ' +
+    '"帮我算一下1+1等于多少" ' +
+    '"分析这个代码并优化性能" ' +
+    '"创建一个电商网站" ' +
+    '"训练一个AI模型" ' +
+    '"分析销售数据并生成报告" ' +
+    '"设计一个Logo" ' +
+    'The system will: ' +
+    '1. Deep thinking and understanding ' +
+    '2. Multi-dimensional analysis ' +
+    '3. Creative problem solving ' +
+    '4. Execute with unlimited agents ' +
+    '5. Generate insights and recommendations ' +
+    'Supports 30+ industries and 100+ skills! ' +
+    'One sentence solves ANYTHING! 💪',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      instruction: {
+        type: 'string',
+        description: 'Describe ANY problem you want to solve in natural language (Chinese/English)',
+      },
+    },
+    required: ['instruction'],
+  },
+  permission: 'ask',
+};
+
+export const ultimateCalculateTool: ToolDefinition = {
+  name: 'ultimate_calculate',
+  description:
+    '🔢 SUPER CALCULATOR: From simple arithmetic to advanced mathematics! ' +
+    'Supports: arithmetic, algebra, calculus, statistics, linear algebra, geometry, optimization. ' +
+    'Examples: ' +
+    '"1+1" → 2 ' +
+    '"sqrt(144)" → 12 ' +
+    '"求解方程 2x + 5 = 15" → x = 5 ' +
+    '"计算圆的面积，半径=5" → 78.54 ' +
+    '"统计分析数据 [1,2,3,4,5]" → mean=3, median=3, std=1.58 ' +
+    'Precision up to 15 decimal places!',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      expression: {
+        type: 'string',
+        description: 'Mathematical expression or problem to solve',
+      },
+      variables: {
+        type: 'object',
+        description: 'Variables to substitute (optional)',
+      },
+    },
+    required: ['expression'],
+  },
+  permission: 'auto',
+};
+
+export const ultimateThinkTool: ToolDefinition = {
+  name: 'ultimate_think',
+  description:
+    '🧠 DEEP THINKING ENGINE: Multi-dimensional analysis and creative problem solving! ' +
+    'Uses 8 thinking modes: analytical, creative, critical, systems, strategic, lateral, convergent, divergent. ' +
+    'The system will: ' +
+    '1. Observe and extract key information ' +
+    '2. Analyze from multiple perspectives ' +
+    '3. Synthesize knowledge from different domains ' +
+    '4. Evaluate solutions critically ' +
+    '5. Create innovative solutions ' +
+    '6. Generate insights and recommendations ' +
+    'Examples: ' +
+    '"如何提高团队效率?" ' +
+    '"分析这个商业模式的可行性" ' +
+    '"设计一个创新的产品" ' +
+    'Provides deep thinking, not just answers!',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      question: {
+        type: 'string',
+        description: 'Question or problem to think deeply about',
+      },
+      mode: {
+        type: 'string',
+        enum: ['analytical', 'creative', 'critical', 'systems', 'strategic', 'lateral', 'convergent', 'divergent'],
+        description: 'Thinking mode (default: analytical)',
+      },
+    },
+    required: ['question'],
+  },
+  permission: 'auto',
+};
+
+export const ultimateLearnTool: ToolDefinition = {
+  name: 'ultimate_learn',
+  description:
+    '📚 KNOWLEDGE GRAPH: Access comprehensive industry knowledge! ' +
+    '30+ industries, 100+ skills, 500+ knowledge nodes. ' +
+    'Categories: technology, business, science, creative, service, industry. ' +
+    'Examples: ' +
+    '"机器学习" → Related concepts, skills, tools ' +
+    '"商业战略" → Frameworks, methods, cases ' +
+    '"UI设计" → Skills, tools, best practices ' +
+    'Provides structured knowledge and recommendations!',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      topic: {
+        type: 'string',
+        description: 'Topic or keyword to learn about',
+      },
+      category: {
+        type: 'string',
+        description: 'Category filter (optional)',
+      },
+    },
+    required: ['topic'],
+  },
+  permission: 'auto',
+};
+
+export const ultimateSkillsTool: ToolDefinition = {
+  name: 'ultimate_skills',
+  description:
+    '💼 INDUSTRY SKILLS: Browse skills across 30+ industries! ' +
+    'Industries: Software Development, Data Science, AI, Game Development, Finance, Healthcare, Education, Design, Marketing, Legal, Science, Manufacturing, and more! ' +
+    'Each industry includes: skills, tools, knowledge, complexity levels. ' +
+    'Examples: ' +
+    '"查看所有行业" → List all industries ' +
+    '"软件开发技能" → Software development skills ' +
+    '"数据分析" → Data analysis skills ' +
+    'Know what skills are available for any task!',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      industry: {
+        type: 'string',
+        description: 'Industry name or keyword (optional, shows all if omitted)',
+      },
+    },
+    required: [],
+  },
+  permission: 'auto',
+};
+
+export const ultimateCommandTool: ToolDefinition = {
+  name: 'ultimate_command',
+  description:
+    '💻 SYSTEM COMMAND: Execute any system command or control any software! ' +
+    'Supports: system commands, application control, file operations, network, database, API. ' +
+    'Can control: VS Code, Git, Docker, Node.js, Python, Chrome, Excel, Word, Photoshop, Unity, Unreal, and more! ' +
+    'Examples: ' +
+    '"打开VS Code" → Launch VS Code ' +
+    '"运行Python脚本" → Execute Python ' +
+    '"git status" → Check git status ' +
+    '"下载文件" → Download file ' +
+    'Full system control at your fingertips!',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      command: {
+        type: 'string',
+        description: 'Command to execute or software to control',
+      },
+      parameters: {
+        type: 'object',
+        description: 'Command parameters (optional)',
+      },
+    },
+    required: ['command'],
+  },
+  permission: 'ask',
+};
+
+export const ultimateStatusTool: ToolDefinition = {
+  name: 'ultimate_status',
+  description:
+    '📊 SYSTEM STATUS: Check the ultimate CLI system status! ' +
+    'Shows: knowledge graph stats, compute engine status, command history, etc. ' +
+    'Use this to understand system capabilities and performance!',
+  input_schema: {
+    type: 'object' as const,
+    properties: {},
+    required: [],
+  },
+  permission: 'auto',
+};
+
+// ── 聚合所有终极工具 ─────────────────────────────────────────────────
+
+export const allUltimateTools: ToolDefinition[] = [
+  ultimateSolveTool,
+  ultimateCalculateTool,
+  ultimateThinkTool,
+  ultimateLearnTool,
+  ultimateSkillsTool,
+  ultimateCommandTool,
+  ultimateStatusTool,
+];
