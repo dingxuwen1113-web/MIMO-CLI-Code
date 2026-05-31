@@ -25,11 +25,19 @@ export class TokenPlanAdapter implements ApiAdapter {
     this.monthlyBudget = config.api.tokenPlan.monthlyBudget;
     this.cacheTtl = (config.promptCaching.cacheTtl || 300) * 1000;
 
-    const clientOpts: Record<string, any> = {
-      apiKey: config.api.tokenPlan.apiKey,
-      maxRetries: 0, // We handle retries ourselves via the global rate limiter
-    };
     const baseUrl = config.api.tokenPlan.baseUrl || process.env.ANTHROPIC_BASE_URL;
+    const apiKey = config.api.tokenPlan.apiKey;
+
+    // Clear ANTHROPIC_BASE_URL env var so the SDK doesn't override our explicit baseURL.
+    // Claude Desktop sets this to its local proxy (127.0.0.1:8000) which causes 429s.
+    if (baseUrl && process.env.ANTHROPIC_BASE_URL && process.env.ANTHROPIC_BASE_URL !== baseUrl) {
+      delete process.env.ANTHROPIC_BASE_URL;
+    }
+
+    const clientOpts: Record<string, any> = {
+      apiKey,
+      maxRetries: 0,
+    };
     if (baseUrl) {
       clientOpts.baseURL = baseUrl;
     }
@@ -239,6 +247,8 @@ export class TokenPlanAdapter implements ApiAdapter {
   private wrapApiError(err: any): Error {
     const status = err?.status || err?.statusCode || err?.error?.status;
     const message = err?.message || String(err);
+    const headers = err?.headers ? JSON.stringify(err.headers) : '(no headers)';
+    console.error(`[DEBUG] API error → status: ${status}, message: ${message.slice(0, 100)}, headers: ${headers}`);
 
     if (status === 401 || message.includes('401')) {
       return new Error('Token Plan API key is invalid or expired. Run "mimo init" to reconfigure.');

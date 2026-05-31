@@ -22,12 +22,19 @@ export class PayAsYouGoAdapter implements ApiAdapter {
 
   constructor(config: MimoConfig) {
     this.config = config;
+    const baseUrl = config.api.payAsYouGo.baseUrl;
+
+    // Clear ANTHROPIC_BASE_URL env var so the SDK doesn't override our explicit baseURL.
+    if (baseUrl && process.env.ANTHROPIC_BASE_URL && process.env.ANTHROPIC_BASE_URL !== baseUrl) {
+      delete process.env.ANTHROPIC_BASE_URL;
+    }
+
     const clientOpts: Record<string, any> = {
       apiKey: config.api.payAsYouGo.apiKey,
-      maxRetries: 0, // We handle retries ourselves via the global rate limiter
+      maxRetries: 0,
     };
-    if (config.api.payAsYouGo.baseUrl) {
-      clientOpts.baseURL = config.api.payAsYouGo.baseUrl;
+    if (baseUrl) {
+      clientOpts.baseURL = baseUrl;
     }
     this.client = new Anthropic(clientOpts as any);
   }
