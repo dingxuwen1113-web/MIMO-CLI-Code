@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { MimoConfig } from '../config/schema';
 import { ApiAdapter, BudgetInfo, UsageStats, StreamCallbacks } from './types';
-import { RateLimiter } from './rate-limiter';
+import { getGlobalRateLimiter } from './rate-limiter';
 
 const PRICING: Record<string, { input: number; output: number; cacheRead: number; cacheWrite: number }> = {
   'mimo-v2.5-pro': { input: 3, output: 15, cacheRead: 0.30, cacheWrite: 3.75 },
@@ -19,23 +19,17 @@ export class PayAsYouGoAdapter implements ApiAdapter {
     thinkingTokens: 0,
     totalCost: 0,
   };
-  private rateLimiter: RateLimiter;
 
   constructor(config: MimoConfig) {
     this.config = config;
     const clientOpts: Record<string, any> = {
       apiKey: config.api.payAsYouGo.apiKey,
+      maxRetries: 0, // We handle retries ourselves via the global rate limiter
     };
     if (config.api.payAsYouGo.baseUrl) {
       clientOpts.baseURL = config.api.payAsYouGo.baseUrl;
     }
     this.client = new Anthropic(clientOpts as any);
-    this.rateLimiter = new RateLimiter({
-      requestsPerMinute: 50,
-      minIntervalMs: 800,
-      cooldownBaseMs: 5000,
-      cooldownMaxMs: 60000,
-    });
   }
 
   resolveModel(requestedModel: string): string {
@@ -73,10 +67,15 @@ export class PayAsYouGoAdapter implements ApiAdapter {
       createParams.max_tokens = Math.max(maxTokens, 64000);
     }
 
+    const limiter = getGlobalRateLimiter();
     try {
-      await this.rateLimiter.wait();
-      const response = await this.client.messages.create(createParams);
-      this.rateLimiter.onSuccess();
+      const response = await limiter.enqueue(
+        () => this.client.messages.create(createParams),
+        { onRetry: (attempt, delayMs) => {
+          const sec = Math.round(delayMs / 1000);
+          process.stdout.write(`\r\x1b[K  rate limited, retry ${attempt}/5, waiting ${sec}s...\r`);
+        }}
+      );
       this.trackUsage(model, response.usage);
       return response;
     } catch (err: any) {
@@ -112,28 +111,30 @@ export class PayAsYouGoAdapter implements ApiAdapter {
       streamParams.max_tokens = Math.max(maxTokens, 64000);
     }
 
+    const limiter = getGlobalRateLimiter();
     try {
-      await this.rateLimiter.wait();
-      const stream = this.client.messages.stream(streamParams);
+      const finalMessage = await limiter.enqueue(async () => {
+        const stream = this.client.messages.stream(streamParams);
 
-      stream.on('text', (text) => callbacks.onText?.(text));
+        stream.on('text', (text) => callbacks.onText?.(text));
+        stream.on('thinking', (thinkingDelta: string, _snapshot: string) => {
+          callbacks.onThinking?.(thinkingDelta);
+        });
+        stream.on('contentBlock', (block) => {
+          if (block.type === 'tool_use') {
+            callbacks.onToolUse?.(block as Anthropic.ToolUseBlock);
+          }
+          if (block.type === 'thinking') {
+            callbacks.onThinking?.((block as any).thinking || '');
+          }
+        });
 
-      // Extended thinking streaming
-      stream.on('thinking', (thinkingDelta: string, _snapshot: string) => {
-        callbacks.onThinking?.(thinkingDelta);
-      });
+        return stream.finalMessage();
+      }, { onRetry: (attempt, delayMs) => {
+        const sec = Math.round(delayMs / 1000);
+        process.stdout.write(`\r\x1b[K  rate limited, retry ${attempt}/5, waiting ${sec}s...\r`);
+      }});
 
-      stream.on('contentBlock', (block) => {
-        if (block.type === 'tool_use') {
-          callbacks.onToolUse?.(block as Anthropic.ToolUseBlock);
-        }
-        if (block.type === 'thinking') {
-          callbacks.onThinking?.((block as any).thinking || '');
-        }
-      });
-
-      const finalMessage = await stream.finalMessage();
-      this.rateLimiter.onSuccess();
       this.trackUsage(model, finalMessage.usage);
       return finalMessage;
     } catch (err: any) {
@@ -213,14 +214,9 @@ export class PayAsYouGoAdapter implements ApiAdapter {
       return new Error(`API endpoint or model not found.${modelHint}`);
     }
     if (status === 429 || message.includes('429')) {
-      const retryAfter = err?.headers?.['retry-after'];
-      const retryAfterSec = retryAfter ? parseInt(retryAfter, 10) : undefined;
-      this.rateLimiter.backoff(retryAfterSec && retryAfterSec > 0 ? retryAfterSec : undefined);
-      const waitMsg = retryAfterSec ? ` Retry after ${retryAfterSec} seconds.` : '';
-      return new Error(`429_rate_limit:${waitMsg}`);
+      return new Error('429_rate_limit: Rate limit exceeded after retries. Please wait a moment and try again.');
     }
     if (status === 529 || message.includes('529')) {
-      this.rateLimiter.backoff();
       return new Error('529_overloaded: API is temporarily overloaded.');
     }
     if (message.includes('ECONNREFUSED') || message.includes('ENOTFOUND')) {

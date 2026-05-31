@@ -18,7 +18,6 @@ import { MCPClient } from '../mcp/client';
 import { ModelRouter } from './router';
 import { Charter } from './charter';
 import { ContextCompressor } from './compressor';
-import { RetryManager } from './retry';
 import { SubagentManager } from '../subagent/manager';
 import { TaskManager } from '../task/manager';
 import { checkToolSafety } from '../security/checks';
@@ -140,7 +139,6 @@ export class MimoAgent {
   private checkpoint: CheckpointManager;
   private sessionResumeData?: SessionData | null;
   private compressor: ContextCompressor;
-  private retryManager: RetryManager;
   private subagentManager: SubagentManager;
 
   private conversationHistory: ConversationMessage[] = [];
@@ -191,7 +189,6 @@ export class MimoAgent {
     this.checkpoint.init().catch(() => {});
 
     this.compressor = new ContextCompressor(deps.apiClient);
-    this.retryManager = new RetryManager();
     this.subagentManager = new SubagentManager(deps.apiClient, deps.tools, deps.charter);
 
     this.sessionFile = path.join(SESSIONS_DIR, `${this.sessionId}.json`);
@@ -977,27 +974,11 @@ export class MimoAgent {
 
         this.turnCount++;
       } catch (err: any) {
-        const msg = err.message || String(err);
-        // 429/529 重试（API adapter 的 rate limiter 已处理冷却，这里只需短暂缓冲）
-        if (msg.includes('429') || msg.includes('rate_limit') ||
-            msg.includes('529') || msg.includes('overloaded') ||
-            msg.includes('rate limit')) {
-          this.errorCount++;
-          if (this.errorCount <= 5) {
-            // Exponential backoff: 3s, 9s, 27s, 60s, 60s (matches rate limiter cooldown)
-            const delay = Math.min(3000 * Math.pow(3, this.errorCount - 1), 60000);
-            if (!this.nonInteractive) {
-              const delaySec = Math.round(delay / 1000);
-              process.stdout.write(`\r\x1b[K  rate limited, retry ${this.errorCount}/5, waiting ${delaySec}s...`);
-            }
-            await new Promise(r => setTimeout(r, delay));
-            continue; // 重试
-          }
-        }
-        // 其他错误或重试次数用完
-        if (!this.nonInteractive) process.stdout.write('\r\x1b[K'); // 清除 rate limit 提示行
+        // 429/529 errors are already retried by the global rate limiter.
+        // If they still escape (retries exhausted), handleApiError suppresses them silently.
+        if (!this.nonInteractive) process.stdout.write('\r\x1b[K');
         this.handleApiError(err);
-        this.errorCount = 0; // 重置计数
+        this.errorCount = 0;
         break;
       }
     }

@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { MimoConfig } from '../config/schema';
 import { ApiAdapter, BudgetInfo, UsageStats, StreamCallbacks } from './types';
-import { RateLimiter } from './rate-limiter';
+import { getGlobalRateLimiter } from './rate-limiter';
 
 export class TokenPlanAdapter implements ApiAdapter {
   private client: Anthropic;
@@ -17,33 +17,23 @@ export class TokenPlanAdapter implements ApiAdapter {
     totalCost: 0,
   };
 
-  // Prompt caching TTL 管理
   private cacheTimestamps: Map<string, number> = new Map();
   private cacheTtl: number;
-
-  // Rate limiter
-  private rateLimiter: RateLimiter;
 
   constructor(config: MimoConfig) {
     this.config = config;
     this.monthlyBudget = config.api.tokenPlan.monthlyBudget;
-    this.cacheTtl = (config.promptCaching.cacheTtl || 300) * 1000; // 转为毫秒
+    this.cacheTtl = (config.promptCaching.cacheTtl || 300) * 1000;
 
     const clientOpts: Record<string, any> = {
       apiKey: config.api.tokenPlan.apiKey,
+      maxRetries: 0, // We handle retries ourselves via the global rate limiter
     };
     const baseUrl = config.api.tokenPlan.baseUrl || process.env.ANTHROPIC_BASE_URL;
     if (baseUrl) {
       clientOpts.baseURL = baseUrl;
     }
     this.client = new Anthropic(clientOpts as any);
-
-    this.rateLimiter = new RateLimiter({
-      requestsPerMinute: 30,
-      minIntervalMs: 1200,
-      cooldownBaseMs: 5000,
-      cooldownMaxMs: 60000,
-    });
   }
 
   resolveModel(requestedModel: string): string {
@@ -72,20 +62,23 @@ export class TokenPlanAdapter implements ApiAdapter {
       tools,
     };
 
-    // Thinking 模式
     if (options.thinking) {
       createParams.thinking = {
         type: 'enabled',
         budget_tokens: Math.min(maxTokens * 2, 128000),
       };
-      // Thinking 模式需要 higher max_tokens
       createParams.max_tokens = Math.max(maxTokens, 64000);
     }
 
+    const limiter = getGlobalRateLimiter();
     try {
-      await this.rateLimiter.wait();
-      const response = await this.client.messages.create(createParams);
-      this.rateLimiter.onSuccess();
+      const response = await limiter.enqueue(
+        () => this.client.messages.create(createParams),
+        { onRetry: (attempt, delayMs) => {
+          const sec = Math.round(delayMs / 1000);
+          process.stdout.write(`\r\x1b[K  rate limited, retry ${attempt}/5, waiting ${sec}s...\r`);
+        }}
+      );
       this.trackUsage(response.usage);
       return response;
     } catch (err: any) {
@@ -123,28 +116,30 @@ export class TokenPlanAdapter implements ApiAdapter {
       streamParams.max_tokens = Math.max(maxTokens, 64000);
     }
 
+    const limiter = getGlobalRateLimiter();
     try {
-      await this.rateLimiter.wait();
-      const stream = this.client.messages.stream(streamParams);
+      const finalMessage = await limiter.enqueue(async () => {
+        const stream = this.client.messages.stream(streamParams);
 
-      stream.on('text', (text) => callbacks.onText?.(text));
+        stream.on('text', (text) => callbacks.onText?.(text));
+        stream.on('thinking', (thinkingDelta: string, _snapshot: string) => {
+          callbacks.onThinking?.(thinkingDelta);
+        });
+        stream.on('contentBlock', (block) => {
+          if (block.type === 'tool_use') {
+            callbacks.onToolUse?.(block as Anthropic.ToolUseBlock);
+          }
+          if (block.type === 'thinking') {
+            callbacks.onThinking?.((block as any).thinking || '');
+          }
+        });
 
-      // Extended thinking streaming
-      stream.on('thinking', (thinkingDelta: string, _snapshot: string) => {
-        callbacks.onThinking?.(thinkingDelta);
-      });
+        return stream.finalMessage();
+      }, { onRetry: (attempt, delayMs) => {
+        const sec = Math.round(delayMs / 1000);
+        process.stdout.write(`\r\x1b[K  rate limited, retry ${attempt}/5, waiting ${sec}s...\r`);
+      }});
 
-      stream.on('contentBlock', (block) => {
-        if (block.type === 'tool_use') {
-          callbacks.onToolUse?.(block as Anthropic.ToolUseBlock);
-        }
-        if (block.type === 'thinking') {
-          callbacks.onThinking?.((block as any).thinking || '');
-        }
-      });
-
-      const finalMessage = await stream.finalMessage();
-      this.rateLimiter.onSuccess();
       this.trackUsage(finalMessage.usage);
       return finalMessage;
     } catch (err: any) {
@@ -167,9 +162,7 @@ export class TokenPlanAdapter implements ApiAdapter {
     return stats;
   }
 
-  // Token counting (approximation)
   countTokens(text: string): number {
-    // 中文约 1.5 字/token，英文约 4 字符/token
     const chineseChars = (text.match(/[一-鿿]/g) || []).length;
     const otherChars = text.length - chineseChars;
     return Math.ceil(chineseChars / 1.5 + otherChars / 4);
@@ -179,7 +172,7 @@ export class TokenPlanAdapter implements ApiAdapter {
     let total = 0;
     for (const msg of messages) {
       const text = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
-      total += this.countTokens(text) + 4; // role overhead
+      total += this.countTokens(text) + 4;
     }
     return total;
   }
@@ -189,7 +182,6 @@ export class TokenPlanAdapter implements ApiAdapter {
       return [{ type: 'text', text: systemPrompt }];
     }
 
-    // 检查缓存是否过期
     const cacheKey = 'system-prompt';
     const lastCached = this.cacheTimestamps.get(cacheKey) || 0;
     const now = Date.now();
@@ -209,7 +201,7 @@ export class TokenPlanAdapter implements ApiAdapter {
   }
 
   private checkBudget(): void {
-    // 无限制模式，不做预算检查
+    // No budget check in unlimited mode
   }
 
   private trackUsage(usage: Anthropic.Usage): void {
@@ -221,7 +213,6 @@ export class TokenPlanAdapter implements ApiAdapter {
   }
 
   private calculateCost(stats: UsageStats): number {
-    // Claude Sonnet 4 pricing (per 1M tokens)
     const inputCost = (stats.inputTokens / 1_000_000) * 3;
     const outputCost = (stats.outputTokens / 1_000_000) * 15;
     const cacheReadCost = (stats.cacheReadTokens / 1_000_000) * 0.30;
@@ -240,15 +231,10 @@ export class TokenPlanAdapter implements ApiAdapter {
       return new Error('Token Plan API key does not have permission for this operation. Check your plan limits.');
     }
     if (status === 429 || message.includes('429')) {
-      // Extract Retry-After header and tell rate limiter
-      const retryAfter = err?.headers?.['retry-after'];
-      const retryAfterSec = retryAfter ? parseInt(retryAfter, 10) : undefined;
-      this.rateLimiter.backoff(retryAfterSec && retryAfterSec > 0 ? retryAfterSec : undefined);
-      const waitMsg = retryAfterSec ? ` Retry after ${retryAfterSec} seconds.` : '';
-      return new Error(`429_rate_limit:${waitMsg}`);
+      // Rate limiter already exhausted retries — surface as non-fatal
+      return new Error('429_rate_limit: Rate limit exceeded after retries. Please wait a moment and try again.');
     }
     if (status === 529 || message.includes('529')) {
-      this.rateLimiter.backoff(); // Also back off on 529
       return new Error('529_overloaded: API is temporarily overloaded.');
     }
     if (message.includes('ECONNREFUSED') || message.includes('ENOTFOUND')) {

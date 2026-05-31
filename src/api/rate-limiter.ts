@@ -1,26 +1,23 @@
-// ── Rate Limiter: Proactive request pacing ───────────
-// Prevents 429s by tracking requests per minute and enforcing
-// minimum intervals. After a 429, enters a cooldown period.
+// ── Rate Limiter: Global request queue with 429 retry ───────
+// All API calls go through enqueue() — it waits for cooldown,
+// enforces intervals, and retries 429s automatically.
 
 export interface RateLimiterConfig {
-  /** Maximum requests per minute (default: 30 for standard plans) */
   requestsPerMinute: number;
-  /** Minimum interval between requests in ms (default: 1000) */
   minIntervalMs: number;
-  /** Initial cooldown after a 429 in ms (default: 5000) */
   cooldownBaseMs: number;
-  /** Max cooldown in ms (default: 60000) */
   cooldownMaxMs: number;
-  /** Cooldown multiplier on repeated 429s (default: 2) */
   cooldownMultiplier: number;
+  maxRetries: number;
 }
 
 const DEFAULT_CONFIG: RateLimiterConfig = {
-  requestsPerMinute: 30,
-  minIntervalMs: 1000,
+  requestsPerMinute: 12,
+  minIntervalMs: 2000,
   cooldownBaseMs: 5000,
-  cooldownMaxMs: 60000,
+  cooldownMaxMs: 120000,
   cooldownMultiplier: 2,
+  maxRetries: 5,
 };
 
 export class RateLimiter {
@@ -31,14 +28,55 @@ export class RateLimiter {
   private cooldownLevel: number = 0;
   private totalWaits: number = 0;
   private totalWaitMs: number = 0;
+  private totalRetries: number = 0;
 
   constructor(config: Partial<RateLimiterConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
   }
 
   /**
-   * Call this BEFORE making an API request.
-   * Resolves when it's safe to proceed.
+   * Enqueue an API request. Handles waiting, retrying 429s, and backoff.
+   * This is the ONLY method callers should use.
+   */
+  async enqueue<T>(
+    fn: () => Promise<T>,
+    options?: { onRetry?: (attempt: number, delayMs: number) => void }
+  ): Promise<T> {
+    let lastError: any = null;
+
+    for (let attempt = 0; attempt <= this.config.maxRetries; attempt++) {
+      await this.wait();
+
+      try {
+        const result = await fn();
+        this.onSuccess();
+        return result;
+      } catch (err: any) {
+        lastError = err;
+
+        if (!this.is429(err)) {
+          throw err;
+        }
+
+        // Extract Retry-After header
+        const retryAfterSec = this.extractRetryAfter(err);
+        this.backoff(retryAfterSec && retryAfterSec > 0 ? retryAfterSec : undefined);
+        this.totalRetries++;
+
+        if (attempt < this.config.maxRetries) {
+          const waitMs = this.getRetryDelay(retryAfterSec);
+          options?.onRetry?.(attempt + 1, waitMs);
+          await this.sleep(waitMs);
+        }
+      }
+    }
+
+    // All retries exhausted — throw the last 429 error
+    throw lastError;
+  }
+
+  /**
+   * Wait until it's safe to make a request.
    */
   async wait(): Promise<void> {
     const now = Date.now();
@@ -64,7 +102,7 @@ export class RateLimiter {
     this.trimOldTimestamps();
     if (this.requestTimestamps.length >= this.config.requestsPerMinute) {
       const oldestInWindow = this.requestTimestamps[0];
-      const waitMs = oldestInWindow + 60_000 - Date.now() + 500; // +500ms buffer
+      const waitMs = oldestInWindow + 60_000 - Date.now() + 500;
       if (waitMs > 0) {
         this.totalWaits++;
         this.totalWaitMs += waitMs;
@@ -77,43 +115,28 @@ export class RateLimiter {
     this.requestTimestamps.push(this.lastRequestTime);
   }
 
-  /**
-   * Call this when a 429 is received.
-   * Enters cooldown mode. If `retryAfterSeconds` is provided from
-   * the Retry-After header, uses that; otherwise escalates exponentially.
-   */
   backoff(retryAfterSeconds?: number): void {
-    const now = Date.now();
     this.cooldownLevel++;
 
     let cooldownMs: number;
     if (retryAfterSeconds && retryAfterSeconds > 0) {
-      // Use server-specified wait time + buffer
       cooldownMs = retryAfterSeconds * 1000 + 1000;
     } else {
-      // Exponential escalation
       cooldownMs = Math.min(
         this.config.cooldownBaseMs * Math.pow(this.config.cooldownMultiplier, this.cooldownLevel - 1),
         this.config.cooldownMaxMs
       );
     }
 
-    this.cooldownUntil = now + cooldownMs;
+    this.cooldownUntil = Date.now() + cooldownMs;
   }
 
-  /**
-   * Call this on a successful (non-429) response.
-   * Gradually reduces cooldown level.
-   */
   onSuccess(): void {
     if (this.cooldownLevel > 0) {
       this.cooldownLevel = Math.max(0, this.cooldownLevel - 1);
     }
   }
 
-  /**
-   * Get current stats for display.
-   */
   getStats(): {
     requestsInWindow: number;
     cooldownActive: boolean;
@@ -121,6 +144,7 @@ export class RateLimiter {
     totalWaits: number;
     totalWaitMs: number;
     cooldownLevel: number;
+    totalRetries: number;
   } {
     this.trimOldTimestamps();
     const now = Date.now();
@@ -131,14 +155,38 @@ export class RateLimiter {
       totalWaits: this.totalWaits,
       totalWaitMs: this.totalWaitMs,
       cooldownLevel: this.cooldownLevel,
+      totalRetries: this.totalRetries,
     };
   }
 
-  /**
-   * Get current rate limit config for display.
-   */
   getConfig(): RateLimiterConfig {
     return { ...this.config };
+  }
+
+  private is429(err: any): boolean {
+    const status = err?.status || err?.statusCode || err?.error?.status;
+    const message = err?.message || String(err);
+    return status === 429 || message.includes('429') || message.includes('rate_limit') || message.includes('rate limit');
+  }
+
+  private extractRetryAfter(err: any): number | undefined {
+    const retryAfter = err?.headers?.['retry-after'];
+    if (retryAfter) {
+      const sec = parseInt(retryAfter, 10);
+      return sec > 0 ? sec : undefined;
+    }
+    return undefined;
+  }
+
+  private getRetryDelay(retryAfterSec?: number): number {
+    if (retryAfterSec && retryAfterSec > 0) {
+      return retryAfterSec * 1000 + 1000;
+    }
+    // Exponential backoff matching the cooldown
+    return Math.min(
+      this.config.cooldownBaseMs * Math.pow(this.config.cooldownMultiplier, this.cooldownLevel - 1),
+      this.config.cooldownMaxMs
+    );
   }
 
   private trimOldTimestamps(): void {
@@ -151,4 +199,19 @@ export class RateLimiter {
   private sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
+}
+
+// ── Singleton: all API calls share one limiter ──────────────
+
+let globalLimiter: RateLimiter | null = null;
+
+export function getGlobalRateLimiter(config?: Partial<RateLimiterConfig>): RateLimiter {
+  if (!globalLimiter) {
+    globalLimiter = new RateLimiter(config);
+  }
+  return globalLimiter;
+}
+
+export function resetGlobalRateLimiter(): void {
+  globalLimiter = null;
 }
