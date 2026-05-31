@@ -78,14 +78,24 @@ export class PayAsYouGoAdapter implements ApiAdapter {
     try {
       const response = await limiter.enqueue(
         () => this.client.messages.create(createParams),
-        { onRetry: (attempt, delayMs) => {
-          const sec = Math.round(delayMs / 1000);
-          process.stdout.write(`\r\x1b[K  rate limited, retry ${attempt}/5, waiting ${sec}s...\r`);
-        }}
       );
       this.trackUsage(model, response.usage);
       return response;
     } catch (err: any) {
+      // If pro model gets 429, auto-downgrade to mimo-v2.5 and retry
+      if (err?.status === 429 && model === 'mimo-v2.5-pro') {
+        console.error('[DEBUG] mimo-v2.5-pro got 429, downgrading to mimo-v2.5...');
+        createParams.model = 'mimo-v2.5';
+        try {
+          const response = await limiter.enqueue(
+            () => this.client.messages.create(createParams),
+          );
+          this.trackUsage('mimo-v2.5', response.usage);
+          return response;
+        } catch (retryErr: any) {
+          throw this.wrapApiError(retryErr, model);
+        }
+      }
       throw this.wrapApiError(err, model);
     }
   }
@@ -143,7 +153,7 @@ export class PayAsYouGoAdapter implements ApiAdapter {
         try {
           return await stream.finalMessage();
         } catch (innerErr: any) {
-          if (textEmitted && (innerErr?.status === 429 || String(innerErr?.message).includes('429'))) {
+          if (textEmitted && innerErr?.status === 429) {
             const err = new Error('429_rate_limit: Rate limit during streaming (partial response already sent).');
             (err as any).__noRetry = true;
             throw err;
@@ -160,6 +170,10 @@ export class PayAsYouGoAdapter implements ApiAdapter {
       this.trackUsage(model, finalMessage.usage);
       return finalMessage;
     } catch (err: any) {
+      if (err?.status === 429) {
+        console.error('[DEBUG] Streaming got 429, falling back to non-streaming (with auto model downgrade)...');
+        return this.chat(messages, tools, systemPrompt, options);
+      }
       throw this.wrapApiError(err, model);
     }
   }
