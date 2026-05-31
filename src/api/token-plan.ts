@@ -101,6 +101,28 @@ export class TokenPlanAdapter implements ApiAdapter {
           throw this.wrapApiError(retryErr);
         }
       }
+      // If SDK throws "Streaming is strongly recommended", use raw HTTP with model downgrade
+      if (String(err?.message || '').includes('Streaming is strongly recommended')) {
+        console.error('[DEBUG] SDK requires streaming, trying raw HTTP...');
+        try {
+          const rawResponse = await this.rawHttpRequest(createParams);
+          this.trackUsage(rawResponse.usage);
+          return rawResponse;
+        } catch (rawErr: any) {
+          if (rawErr?.status === 429 && model === 'mimo-v2.5-pro') {
+            console.error('[DEBUG] mimo-v2.5-pro got 429 via raw HTTP, downgrading to mimo-v2.5...');
+            createParams.model = 'mimo-v2.5';
+            try {
+              const retryResponse = await this.rawHttpRequest(createParams);
+              this.trackUsage(retryResponse.usage);
+              return retryResponse;
+            } catch (retryErr: any) {
+              throw this.wrapApiError(retryErr);
+            }
+          }
+          throw this.wrapApiError(rawErr);
+        }
+      }
       throw this.wrapApiError(err);
     }
   }
