@@ -16,11 +16,11 @@ export interface RateLimiterConfig {
 
 const DEFAULT_CONFIG: RateLimiterConfig = {
   requestsPerMinute: 9999,
-  minIntervalMs: 0,
-  cooldownBaseMs: 1000,
-  cooldownMaxMs: 10000,
-  cooldownMultiplier: 2,
-  maxRetries: 0,  // NO retries — let errors propagate immediately
+  minIntervalMs: 3000,       // 3s between requests (stay under ~20 RPM)
+  cooldownBaseMs: 15000,     // 429 → wait 15s first retry
+  cooldownMaxMs: 60000,      // max wait 60s
+  cooldownMultiplier: 2,     // 15s → 30s → 60s
+  maxRetries: 3,             // retry up to 3 times on 429
 };
 
 export class RateLimiter {
@@ -69,7 +69,12 @@ export class RateLimiter {
 
         if (attempt < this.config.maxRetries) {
           const waitMs = Math.max(0, this.cooldownUntil - Date.now());
+          const waitSec = Math.round(waitMs / 1000);
           options?.onRetry?.(attempt + 1, waitMs);
+          // Show wait message if caller didn't provide onRetry
+          if (!options?.onRetry) {
+            process.stderr.write(`\r\x1b[K  ⏳ rate limited, waiting ${waitSec}s... (retry ${attempt + 1}/${this.config.maxRetries})\r`);
+          }
         }
       }
     }
