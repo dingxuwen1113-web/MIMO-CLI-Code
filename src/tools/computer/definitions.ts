@@ -316,6 +316,290 @@ export const computerAutoTool: ToolDefinition = {
   permission: 'ask',
 };
 
+// ── Super Automation (无限并行Agents) ─────────────────────────────────
+
+export const superAutoTool: ToolDefinition = {
+  name: 'super_auto',
+  description:
+    '🚀 ULTIMATE AUTOMATION: Execute ANY task with unlimited parallel agents! ' +
+    'This is the most powerful automation tool that can handle ANY complexity: ' +
+    '- Full software testing and automatic bug fixing ' +
+    '- Game development with 3D rendering and scene creation ' +
+    '- Office automation (data analysis, reports, presentations) ' +
+    '- AI model training and deployment ' +
+    '- Security auditing and vulnerability fixing ' +
+    '- UI/UX design and prototyping ' +
+    '- And ANY other task you can imagine! ' +
+    'Just describe what you want in natural language, and the system will: ' +
+    '1. Automatically understand your intent ' +
+    '2. Decompose into optimal subtasks ' +
+    '3. Spawn unlimited parallel agents ' +
+    '4. Execute everything simultaneously ' +
+    '5. Aggregate results intelligently ' +
+    'Examples: ' +
+    '"测试这个软件的所有功能并修复所有bug" ' +
+    '"创建一个3D游戏场景，包含地形、建筑和角色" ' +
+    '"分析这份销售数据并生成可视化报告" ' +
+    '"训练一个图像识别模型并部署到生产环境" ' +
+    '"对这个系统进行全面安全审计" ' +
+    'Supports: Chinese, English, and mixed languages. ' +
+    'One person can now do the work of 1000 people! 💪',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      instruction: {
+        type: 'string',
+        description: 'Describe ANY task you want to accomplish in natural language',
+      },
+      maxAgents: {
+        type: 'number',
+        description: 'Maximum number of parallel agents (0 = unlimited, default: 0)',
+        minimum: 0,
+      },
+      timeout: {
+        type: 'number',
+        description: 'Task timeout in milliseconds (default: 600000 = 10 minutes)',
+        minimum: 1000,
+      },
+      priority: {
+        type: 'string',
+        enum: ['critical', 'high', 'medium', 'low', 'background'],
+        description: 'Task priority (default: high)',
+      },
+      parallelism: {
+        type: 'number',
+        description: 'Maximum parallel tasks (0 = unlimited, default: 0)',
+        minimum: 0,
+      },
+      verbose: {
+        type: 'boolean',
+        description: 'Show detailed execution logs (default: false)',
+      },
+    },
+    required: ['instruction'],
+  },
+  permission: 'ask',
+};
+
+// ── 专用超级工具 ─────────────────────────────────────────────────────
+
+export const softwareTestTool: ToolDefinition = {
+  name: 'super_software_test',
+  description:
+    '🔬 Run comprehensive software tests with parallel testing agents. ' +
+    'Automatically identifies and runs all types of tests: unit, integration, e2e, performance, security. ' +
+    'Generates detailed test reports and identifies issues.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      target: {
+        type: 'string',
+        description: 'Software to test (e.g., "this application", "API endpoints", "frontend")',
+      },
+      testTypes: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Types of tests to run (optional, runs all by default)',
+      },
+    },
+    required: ['target'],
+  },
+  permission: 'ask',
+};
+
+export const bugFixTool: ToolDefinition = {
+  name: 'super_bug_fix',
+  description:
+    '🔧 Automatically identify and fix bugs using parallel debugging agents. ' +
+    'Analyzes code, identifies root causes, generates fixes, and verifies solutions. ' +
+    'Can fix multiple bugs simultaneously.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      description: {
+        type: 'string',
+        description: 'Bug description or error message',
+      },
+      autoFix: {
+        type: 'boolean',
+        description: 'Automatically apply fixes (default: true)',
+      },
+    },
+    required: ['description'],
+  },
+  permission: 'ask',
+};
+
+export const gameCreationTool: ToolDefinition = {
+  name: 'super_game_create',
+  description:
+    '🎮 Create games and interactive experiences with parallel game development agents. ' +
+    'Supports: 2D/3D graphics, game logic, level design, character creation, ' +
+    'physics simulation, AI behavior, sound design, and optimization. ' +
+    'Can integrate with Unity, Unreal, Godot, or custom engines.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      description: {
+        type: 'string',
+        description: 'Game concept and requirements',
+      },
+      engine: {
+        type: 'string',
+        enum: ['unity', 'unreal', 'godot', 'custom', 'auto'],
+        description: 'Game engine to use (default: auto)',
+      },
+      style: {
+        type: 'string',
+        description: 'Art style (e.g., "pixel art", "realistic", "cartoon")',
+      },
+    },
+    required: ['description'],
+  },
+  permission: 'ask',
+};
+
+export const officeAutomationTool: ToolDefinition = {
+  name: 'super_office_auto',
+  description:
+    '💼 Automate office workflows with parallel processing agents. ' +
+    'Handles: data analysis, report generation, presentations, email automation, ' +
+    'scheduling, document processing, and more. ' +
+    'Process massive datasets and generate professional outputs.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      task: {
+        type: 'string',
+        description: 'Office task to automate',
+      },
+      outputFormat: {
+        type: 'string',
+        enum: ['pdf', 'excel', 'powerpoint', 'html', 'json'],
+        description: 'Output format (default: auto)',
+      },
+    },
+    required: ['task'],
+  },
+  permission: 'ask',
+};
+
+export const dataAnalysisTool: ToolDefinition = {
+  name: 'super_data_analyze',
+  description:
+    '📊 Perform advanced data analysis with parallel analytical agents. ' +
+    'Supports: statistical analysis, pattern recognition, predictive modeling, ' +
+    'data visualization, anomaly detection, and trend analysis. ' +
+    'Process terabytes of data efficiently.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      description: {
+        type: 'string',
+        description: 'Data analysis requirements',
+      },
+      dataSource: {
+        type: 'string',
+        description: 'Data source (file, database, API, etc.)',
+      },
+      analysisType: {
+        type: 'string',
+        enum: ['descriptive', 'diagnostic', 'predictive', 'prescriptive'],
+        description: 'Type of analysis (default: auto)',
+      },
+    },
+    required: ['description'],
+  },
+  permission: 'ask',
+};
+
+export const aiTrainingTool: ToolDefinition = {
+  name: 'super_ai_train',
+  description:
+    '🤖 Train AI/ML models with parallel training agents. ' +
+    'Supports: deep learning, computer vision, NLP, reinforcement learning, ' +
+    'model optimization, hyperparameter tuning, and deployment. ' +
+    'Distributed training across multiple GPUs/nodes.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      description: {
+        type: 'string',
+        description: 'AI model training requirements',
+      },
+      modelType: {
+        type: 'string',
+        enum: ['classification', 'regression', 'detection', 'generation', 'reinforcement'],
+        description: 'Model type (default: auto)',
+      },
+      computeResources: {
+        type: 'string',
+        description: 'Compute resources (e.g., "4x GPU", "cluster")',
+      },
+    },
+    required: ['description'],
+  },
+  permission: 'ask',
+};
+
+export const securityAuditTool: ToolDefinition = {
+  name: 'super_security_audit',
+  description:
+    '🛡️ Perform comprehensive security audits with parallel security agents. ' +
+    'Includes: vulnerability scanning, penetration testing, code review, ' +
+    'compliance checking, threat modeling, and security hardening. ' +
+    'Industry-standard security assessment.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      target: {
+        type: 'string',
+        description: 'System to audit (application, network, infrastructure)',
+      },
+      auditType: {
+        type: 'string',
+        enum: ['vulnerability', 'penetration', 'compliance', 'code-review', 'full'],
+        description: 'Type of audit (default: full)',
+      },
+    },
+    required: ['target'],
+  },
+  permission: 'ask',
+};
+
+export const superStatusTool: ToolDefinition = {
+  name: 'super_status',
+  description:
+    '📈 Get real-time status of the super automation system. ' +
+    'Shows: active agents, running tasks, performance metrics, ' +
+    'resource utilization, and recent command history.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      detailed: {
+        type: 'boolean',
+        description: 'Show detailed status (default: false)',
+      },
+    },
+    required: [],
+  },
+  permission: 'auto',
+};
+
+// ── 聚合所有超级工具 ─────────────────────────────────────────────────
+
+export const allSuperTools: ToolDefinition[] = [
+  superAutoTool,
+  softwareTestTool,
+  bugFixTool,
+  gameCreationTool,
+  officeAutomationTool,
+  dataAnalysisTool,
+  aiTrainingTool,
+  securityAuditTool,
+  superStatusTool,
+];
+
 // ── Aggregate array of all computer tools ─────────────────────────────
 
 export const allComputerTools: ToolDefinition[] = [

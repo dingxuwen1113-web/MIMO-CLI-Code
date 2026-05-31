@@ -46,6 +46,8 @@ import {
   computerMouseMoveTool, computerDragTool, computerScrollTool, computerWaitTool,
   computerGetCursorTool, computerLaunchTool, computerFocusTool, computerListWindowsTool,
   computerAutoTool,
+  superAutoTool, softwareTestTool, bugFixTool, gameCreationTool,
+  officeAutomationTool, dataAnalysisTool, aiTrainingTool, securityAuditTool, superStatusTool,
 } from './computer/definitions';
 import {
   executeComputerScreenshot, executeComputerClick, executeComputerType, executeComputerKey,
@@ -53,6 +55,11 @@ import {
   executeComputerGetCursor, executeComputerLaunch, executeComputerFocus, executeComputerListWindows,
   executeComputerAuto,
 } from './computer/engine';
+import {
+  executeSuperAuto, executeSoftwareTest, executeBugFix, executeGameCreation,
+  executeOfficeAutomation, executeDataAnalysis, executeAITraining, executeSecurityAudit,
+  executeSuperStatus,
+} from './computer/professional-agents';
 import { imageReadTool, fileUploadTool, executeImageRead, executeFileUpload } from './image/image';
 import { autoReviewTool } from './review/definitions';
 import { executeAutoReview } from './review/auto-review';
@@ -139,6 +146,9 @@ export class ToolRegistry {
       computerMouseMoveTool, computerDragTool, computerScrollTool, computerWaitTool,
       computerGetCursorTool, computerLaunchTool, computerFocusTool, computerListWindowsTool,
       computerAutoTool,
+      // Super Automation (unlimited parallel agents)
+      superAutoTool, softwareTestTool, bugFixTool, gameCreationTool,
+      officeAutomationTool, dataAnalysisTool, aiTrainingTool, securityAuditTool, superStatusTool,
       // Auto Review
       autoReviewTool,
       // Cyber Safety
@@ -208,6 +218,7 @@ export class ToolRegistry {
       'notebook_read', 'image_read',
       'computer_screenshot', 'computer_mouse_move', 'computer_scroll', 'computer_get_cursor', 'computer_wait',
       'computer_focus', 'computer_list_windows',
+      'super_status',
       'auto_review', 'cyber_scan',
     ];
     if (readOnlyTools.includes(toolName)) return 'auto';
@@ -236,13 +247,15 @@ export class ToolRegistry {
     // Task 操作 — 自动
     if (['task_create', 'task_update'].includes(toolName)) return 'auto';
 
-    // 浏览器交互 + Computer（桌面 GUI 交互）
+    // 浏览器交互 + Computer（桌面 GUI 交互）+ Super Automation
     if (['browser_click', 'browser_type', 'browser_execute_js', 'browser_form_input',
          'browser_file_upload', 'browser_drag', 'browser_tabs_close',
          'browser_gif_start', 'browser_gif_stop', 'browser_gif_export',
          'browser_select_browser', 'browser_resize',
          'computer_click', 'computer_type', 'computer_key', 'computer_drag',
-         'computer_launch', 'computer_auto'].includes(toolName)) {
+         'computer_launch', 'computer_auto',
+         'super_auto', 'super_software_test', 'super_bug_fix', 'super_game_create',
+         'super_office_auto', 'super_data_analyze', 'super_ai_train', 'super_security_audit'].includes(toolName)) {
       return this.modeManager.getMode() === 'yolo' ? 'auto' : 'ask';
     }
 
@@ -375,6 +388,16 @@ export class ToolRegistry {
         case 'computer_focus':      return await executeComputerFocus(input);
         case 'computer_list_windows': return await executeComputerListWindows(input);
         case 'computer_auto':       return await executeComputerAuto(input);
+        // Super Automation (unlimited parallel agents)
+        case 'super_auto':          return await executeSuperAuto(input);
+        case 'super_software_test': return await executeSoftwareTest(input);
+        case 'super_bug_fix':       return await executeBugFix(input);
+        case 'super_game_create':   return await executeGameCreation(input);
+        case 'super_office_auto':   return await executeOfficeAutomation(input);
+        case 'super_data_analyze':  return await executeDataAnalysis(input);
+        case 'super_ai_train':      return await executeAITraining(input);
+        case 'super_security_audit': return await executeSecurityAudit(input);
+        case 'super_status':        return await executeSuperStatus(input);
         // Auto Review
         case 'auto_review':         return await executeAutoReview(input);
         // Cyber Safety
