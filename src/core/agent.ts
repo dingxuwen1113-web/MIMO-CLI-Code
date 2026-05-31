@@ -984,13 +984,14 @@ export class MimoAgent {
             msg.includes('rate limit')) {
           this.errorCount++;
           if (this.errorCount <= 5) {
-            // 短延迟 — rate limiter 会在下次请求前等待更长时间
-            const delay = 2000;
+            // Exponential backoff: 3s, 9s, 27s, 60s, 60s (matches rate limiter cooldown)
+            const delay = Math.min(3000 * Math.pow(3, this.errorCount - 1), 60000);
             if (!this.nonInteractive) {
-              process.stdout.write(`\r\x1b[K  rate limited, retry ${this.errorCount}/5, waiting for cooldown...`);
+              const delaySec = Math.round(delay / 1000);
+              process.stdout.write(`\r\x1b[K  rate limited, retry ${this.errorCount}/5, waiting ${delaySec}s...`);
             }
             await new Promise(r => setTimeout(r, delay));
-            continue; // 重试（rate limiter 会在下次 API 调用时强制等待）
+            continue; // 重试
           }
         }
         // 其他错误或重试次数用完

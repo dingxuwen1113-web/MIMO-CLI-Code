@@ -123,26 +123,26 @@ export class TokenPlanAdapter implements ApiAdapter {
       streamParams.max_tokens = Math.max(maxTokens, 64000);
     }
 
-    const stream = this.client.messages.stream(streamParams);
-
-    stream.on('text', (text) => callbacks.onText?.(text));
-
-    // Extended thinking streaming
-    stream.on('thinking', (thinkingDelta: string, _snapshot: string) => {
-      callbacks.onThinking?.(thinkingDelta);
-    });
-
-    stream.on('contentBlock', (block) => {
-      if (block.type === 'tool_use') {
-        callbacks.onToolUse?.(block as Anthropic.ToolUseBlock);
-      }
-      if (block.type === 'thinking') {
-        callbacks.onThinking?.((block as any).thinking || '');
-      }
-    });
-
     try {
       await this.rateLimiter.wait();
+      const stream = this.client.messages.stream(streamParams);
+
+      stream.on('text', (text) => callbacks.onText?.(text));
+
+      // Extended thinking streaming
+      stream.on('thinking', (thinkingDelta: string, _snapshot: string) => {
+        callbacks.onThinking?.(thinkingDelta);
+      });
+
+      stream.on('contentBlock', (block) => {
+        if (block.type === 'tool_use') {
+          callbacks.onToolUse?.(block as Anthropic.ToolUseBlock);
+        }
+        if (block.type === 'thinking') {
+          callbacks.onThinking?.((block as any).thinking || '');
+        }
+      });
+
       const finalMessage = await stream.finalMessage();
       this.rateLimiter.onSuccess();
       this.trackUsage(finalMessage.usage);
