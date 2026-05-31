@@ -1,7 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk';
+import createDebug from 'debug';
 import { MimoConfig } from '../config/schema';
 import { ApiAdapter, BudgetInfo, UsageStats, StreamCallbacks } from './types';
 import { getGlobalRateLimiter } from './rate-limiter';
+
+const debug = createDebug('mimo:api');
 
 const PRICING: Record<string, { input: number; output: number; cacheRead: number; cacheWrite: number }> = {
   'mimo-v2.5-pro': { input: 3, output: 15, cacheRead: 0.30, cacheWrite: 3.75 },
@@ -80,7 +83,7 @@ export class PayAsYouGoAdapter implements ApiAdapter {
     } catch (err: any) {
       // If pro model gets 429, auto-downgrade to mimo-v2.5 and retry
       if (err?.status === 429 && model === 'mimo-v2.5-pro') {
-        console.error('[DEBUG] mimo-v2.5-pro got 429, downgrading to mimo-v2.5...');
+        debug('mimo-v2.5-pro got 429, downgrading to mimo-v2.5');
         createParams.model = 'mimo-v2.5';
         try {
           const response = await limiter.enqueue(
@@ -167,7 +170,7 @@ export class PayAsYouGoAdapter implements ApiAdapter {
       return finalMessage;
     } catch (err: any) {
       if (err?.status === 429) {
-        console.error('[DEBUG] Streaming got 429, falling back to non-streaming (with auto model downgrade)...');
+        debug('Streaming got 429, falling back to non-streaming (with auto model downgrade)');
         return this.chat(messages, tools, systemPrompt, options);
       }
       throw this.wrapApiError(err, model);
@@ -234,6 +237,7 @@ export class PayAsYouGoAdapter implements ApiAdapter {
   private wrapApiError(err: any, model?: string): Error {
     const status = err?.status || err?.statusCode || err?.error?.status;
     const message = err?.message || String(err);
+    debug('API error → status: %d, model: %s, message: %s', status, model ?? 'unknown', message.slice(0, 100));
 
     if (status === 401 || message.includes('401')) {
       return new Error('API key is invalid or expired. Run "mimo init" to reconfigure.');

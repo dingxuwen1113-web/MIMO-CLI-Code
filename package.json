@@ -1,7 +1,7 @@
 {
   "name": "mimo-cli-code",
-  "version": "1.0.0",
-  "description": "MIMO CLI Code - Xiaomi ",
+  "version": "2.0.0-alpha.1",
+  "description": "MIMO CLI Code v2 - Xiaomi Terminal AI Coding Agent",
   "main": "dist/index.js",
   "exports": {
     ".": "./dist/index.js",
@@ -17,14 +17,28 @@
     "mcp": "node dist/mcp/memory-server.js",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\"",
+    "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },
-  "keywords": ["cli", "ai", "coding-agent", "anthropic", "claude"],
+  "keywords": [
+    "cli",
+    "ai",
+    "coding-agent",
+    "anthropic",
+    "claude",
+    "xiaomi"
+  ],
   "license": "MIT",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
     "chalk": "^5.4.1",
     "commander": "^12.1.0",
+    "debug": "^4.3.0",
     "diff": "^7.0.0",
     "dotenv": "^16.4.7",
     "glob": "^11.0.1",
@@ -37,11 +51,15 @@
     "playwright": "^1.49.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "@types/debug": "^4.1.13",
     "@types/diff": "^6.0.0",
     "@types/node": "^22.10.5",
-    "@types/react": "^18.3.18",
+    "eslint": "^9.0.0",
+    "prettier": "^3.0.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",
+    "typescript-eslint": "^8.0.0",
     "vitest": "^1.6.0"
   }
 }

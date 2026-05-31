@@ -3,6 +3,8 @@ import { FeatureModule, FeatureContext } from '../registry';
 import { readFileSafe, getSourceFiles } from '../utils';
 import * as path from 'path';
 import * as fs from 'fs/promises';
+import createDebug from 'debug';
+const debug = createDebug('mimo:features:predictive-intent');
 
 interface PredictedFile { path: string; reason: string; score: number; preloaded: boolean; content?: string; }
 
@@ -14,10 +16,12 @@ class PredictiveIntentEngine {
 
   async init(projectDir: string) {
     this.projectDir = projectDir;
+    debug('Initializing predictive intent engine for %s', projectDir);
     await this.loadPatterns();
   }
 
   async predict(input: string): Promise<PredictedFile[]> {
+    debug('Predicting intent for input: %s', input.slice(0, 80));
     const predictions: PredictedFile[] = [];
     const lower = input.toLowerCase();
 
@@ -61,23 +65,26 @@ class PredictiveIntentEngine {
     for (const p of predictions.sort((a, b) => b.score - a.score)) {
       if (!unique.has(p.path) && unique.size < 10) unique.set(p.path, p);
     }
-    return Array.from(unique.values());
+    const result = Array.from(unique.values());
+    debug('Generated %d predictions (raw=%d)', result.length, predictions.length);
+    return result;
   }
 
   async preload(predictions: PredictedFile[]): Promise<void> {
-    for (const p of predictions) {
-      if (!p.preloaded && p.score >= 3) {
-        const content = await readFileSafe(p.path);
-        if (content) {
-          this.preloadCache.set(p.path, content.slice(0, 5000));
-          p.preloaded = true;
-          p.content = content.slice(0, 200);
-        }
+    const preloadable = predictions.filter(p => p.score >= 3 && !p.preloaded);
+    debug('Preloading %d high-score predictions', preloadable.length);
+    for (const p of preloadable) {
+      const content = await readFileSafe(p.path);
+      if (content) {
+        this.preloadCache.set(p.path, content.slice(0, 5000));
+        p.preloaded = true;
+        p.content = content.slice(0, 200);
       }
     }
   }
 
   recordAccess(input: string, files: string[]) {
+    debug('Recording access: input=%s, files=%d', input.slice(0, 40), files.length);
     this.history.push({ input, filesAccessed: files, timestamp: Date.now() });
     if (this.history.length > 200) this.history = this.history.slice(-200);
   }
@@ -125,9 +132,14 @@ export const PredictiveIntentFeature: FeatureModule = {
     category: 'perception',
     enabled: true,
     priority: 'P0',
+    maturity: 'stable',
   },
-  async init(ctx: FeatureContext) { await engine.init(ctx.projectDir); },
+  async init(ctx: FeatureContext) {
+    debug('Initializing Predictive Intent feature');
+    await engine.init(ctx.projectDir);
+  },
   async onEvent(event: string, data: any) {
+    debug('Event received: %s', event);
     if (event === 'user_input_changed') await engine.predict(data.input);
     if (event === 'tool_executed' && data.files) engine.recordAccess(data.input || '', data.files);
   },

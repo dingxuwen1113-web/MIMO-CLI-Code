@@ -2,6 +2,8 @@
 import { FeatureModule, FeatureContext } from '../registry';
 import { getSourceFiles, readFileSafe } from '../utils';
 import * as path from 'path';
+import createDebug from 'debug';
+const debug = createDebug('mimo:features:code-dna');
 
 interface ProjectDNA {
   namingStyle: 'camelCase' | 'snake_case' | 'PascalCase' | 'mixed';
@@ -41,9 +43,11 @@ class CodeDNAnalyzer {
 
   async analyze(projectDir: string): Promise<ProjectDNA> {
     if (this.dna && this.analyzed) return this.dna;
+    debug('Starting code DNA analysis for %s', projectDir);
 
     const files = await getSourceFiles(projectDir);
     const samples = files.slice(0, 50);
+    debug('Found %d source files, sampling %d', files.length, samples.length);
 
     let camelCount = 0, snakeCount = 0, pascalCount = 0;
     let tabCount = 0, spaceCount = 0, indentSizes: number[] = [];
@@ -165,11 +169,14 @@ class CodeDNAnalyzer {
     };
 
     this.analyzed = true;
+    debug('Code DNA analysis complete: %s style, %s quotes, %s semicolons, %d patterns detected',
+      this.dna.namingStyle, this.dna.quoteStyle, this.dna.semicolons ? 'yes' : 'no', this.dna.patterns.length);
     return this.dna;
   }
 
   checkConsistency(code: string): Array<{ line: number; issue: string; suggestion: string }> {
     if (!this.dna) return [];
+    debug('Checking code consistency against project DNA');
     const issues: Array<{ line: number; issue: string; suggestion: string }> = [];
     const lines = code.split('\n');
 
@@ -213,8 +220,12 @@ export const CodePatternDNAFeature: FeatureModule = {
     category: 'perception',
     enabled: true,
     priority: 'P0',
+    maturity: 'stable',
   },
-  async init(ctx: FeatureContext) { await analyzer.analyze(ctx.projectDir); },
+  async init(ctx: FeatureContext) {
+    debug('Initializing Code Pattern DNA feature');
+    await analyzer.analyze(ctx.projectDir);
+  },
   getTools() {
     return [
       {
@@ -225,6 +236,7 @@ export const CodePatternDNAFeature: FeatureModule = {
           input_schema: { type: 'object' as const, properties: {} },
         },
         execute: async () => {
+          debug('Tool: analyze_dna called');
           const dna = analyzer.getDNA();
           return { output: dna ? JSON.stringify(dna, null, 2) : '(not analyzed)', isError: false };
         },
@@ -237,11 +249,13 @@ export const CodePatternDNAFeature: FeatureModule = {
           input_schema: { type: 'object' as const, properties: { code: { type: 'string', description: 'Code to check' } }, required: ['code'] },
         },
         execute: async (input: any) => {
+          debug('Tool: check_code_consistency called with %d chars', input.code?.length || 0);
           const issues = analyzer.checkConsistency(input.code);
+          debug('Found %d consistency issues', issues.length);
           return {
             output: issues.length > 0
               ? issues.map(i => `L${i.line}: ${i.issue} → ${i.suggestion}`).join('\n')
-              : '代码符合项目规范 ✓',
+              : 'Code follows project conventions',
             isError: false,
           };
         },

@@ -11,7 +11,7 @@ export interface SDKConfig {
   /** Model to use (e.g. 'mimo-v2.5-pro', 'mimo-v2.5', 'auto'). */
   model?: string;
   /** Agent mode. Determines tool permission level. */
-  mode?: 'plan' | 'agent' | 'yolo';
+  mode?: 'plan' | 'agent' | 'custom' | 'yolo';
   /** Maximum LLM turns per run() or chat() call. */
   maxTurns?: number;
   /** Enable streaming responses. Default: true. */

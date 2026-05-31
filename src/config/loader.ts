@@ -2,16 +2,40 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
 import * as toml from 'toml';
-import { MimoConfig, DEFAULT_CONFIG, ApiMode, AgentMode, ModelId, validateConfig } from './schema';
+import {
+  MimoConfig,
+  MimoConfigV1,
+  DEFAULT_CONFIG,
+  ApiMode,
+  AgentMode,
+  ModelId,
+  ProviderType,
+  LocaleType,
+  FeatureMaturity,
+  validateConfig,
+  CONFIG_KEY_MAP,
+  getConfigValue,
+  setConfigValue,
+  parseConfigValue,
+} from './schema';
 
 const CONFIG_DIR = path.join(os.homedir(), '.mimo');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.toml');
+const PROJECT_CONFIG_FILE = '.mimo/config.toml';
 
+// ── Config Loading ─────────────────────────────────────────────────
+
+/**
+ * Load the full merged configuration from all sources.
+ *
+ * Precedence (lowest to highest):
+ *   defaults < global TOML < project TOML < settings.json layers < CLI options < env vars
+ */
 export async function loadConfig(cliOptions: any = {}): Promise<MimoConfig> {
   const homeDir = os.homedir();
   const cwd = process.cwd();
 
-  // 1. 加载 TOML 配置（传统）
+  // 1. Load global TOML config
   let fileConfig: Partial<MimoConfig> = {};
   try {
     const raw = await fs.readFile(CONFIG_FILE, 'utf-8');
@@ -22,10 +46,24 @@ export async function loadConfig(cliOptions: any = {}): Promise<MimoConfig> {
       console.error('Falling back to default config. Run "mimo init" to re-configure.');
     }
   } catch {
-    // 配置文件不存在 — this is fine
+    // config file does not exist -- this is fine
   }
 
-  // 2. 加载 settings.json 层级（Claude Code 兼容）
+  // 2. Load project-level TOML config (.mimo/config.toml in project root)
+  let projectConfig: Partial<MimoConfig> = {};
+  const projectConfigPath = path.join(cwd, PROJECT_CONFIG_FILE);
+  try {
+    const raw = await fs.readFile(projectConfigPath, 'utf-8');
+    try {
+      projectConfig = toml.parse(raw);
+    } catch (parseErr: any) {
+      console.error(`Warning: Malformed TOML in ${projectConfigPath}: ${parseErr.message}`);
+    }
+  } catch {
+    // project config does not exist -- this is fine
+  }
+
+  // 3. Load settings.json layers (Claude Code compatible)
   let settingsConfig: Record<string, any> = {};
   const settingsPaths = [
     path.join(homeDir, '.claude', 'settings.json'),
@@ -45,15 +83,17 @@ export async function loadConfig(cliOptions: any = {}): Promise<MimoConfig> {
         // skip malformed JSON
       }
     } catch {
-      // file doesn't exist — skip
+      // file does not exist -- skip
     }
   }
 
-  // 3. 合并：默认 < TOML < settings.json < CLI < 环境变量
+  // 4. Merge: defaults < TOML < project TOML < settings.json < CLI < env vars
   let config = deepMerge(DEFAULT_CONFIG, fileConfig);
+  config = deepMerge(config, projectConfig);
 
-  // 从 settings.json 映射到 MimoConfig
+  // Map settings.json fields to MimoConfig
   if (settingsConfig.api?.model) config.api.model = settingsConfig.api.model;
+  if (settingsConfig.api?.provider) config.api.provider = settingsConfig.api.provider;
   if (settingsConfig.agent?.mode) config.agent.mode = settingsConfig.agent.mode;
   if (settingsConfig.agent?.maxTurns) config.agent.maxTurns = settingsConfig.agent.maxTurns;
   if (settingsConfig.tools?.shellTimeout) config.tools.shellTimeout = settingsConfig.tools.shellTimeout;
@@ -61,15 +101,20 @@ export async function loadConfig(cliOptions: any = {}): Promise<MimoConfig> {
     if (settingsConfig.promptCaching.enabled !== undefined) config.promptCaching.enabled = settingsConfig.promptCaching.enabled;
     if (settingsConfig.promptCaching.cacheTtl) config.promptCaching.cacheTtl = settingsConfig.promptCaching.cacheTtl;
   }
+  if (settingsConfig.i18n?.locale) config.i18n.locale = settingsConfig.i18n.locale;
+  if (settingsConfig.debug?.enabled !== undefined) config.debug.enabled = settingsConfig.debug.enabled;
+  if (settingsConfig.features?.maturity) config.features.maturity = settingsConfig.features.maturity;
 
-  // CLI 参数覆盖
+  // CLI option overrides
   if (cliOptions.model) config.api.model = cliOptions.model as ModelId;
   if (cliOptions.mode) config.agent.mode = cliOptions.mode as AgentMode;
   if (cliOptions.apiMode) config.api.mode = cliOptions.apiMode as ApiMode;
   if (cliOptions.maxTurns) config.agent.maxTurns = parseInt(cliOptions.maxTurns, 10);
   if (cliOptions.stream === false) config.api.stream = false;
+  if (cliOptions.provider) config.api.provider = cliOptions.provider as ProviderType;
+  if (cliOptions.locale) config.i18n.locale = cliOptions.locale as LocaleType;
 
-  // 环境变量覆盖（仅非空值）
+  // Environment variable overrides (only non-empty values)
   if (process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY.trim()) {
     if (config.api.mode === 'token-plan') {
       config.api.tokenPlan.apiKey = process.env.ANTHROPIC_API_KEY;
@@ -79,6 +124,20 @@ export async function loadConfig(cliOptions: any = {}): Promise<MimoConfig> {
   }
   if (process.env.MIMO_MODEL) config.api.model = process.env.MIMO_MODEL as ModelId;
   if (process.env.MIMO_MODE) config.agent.mode = process.env.MIMO_MODE as AgentMode;
+  if (process.env.MIMO_PROVIDER) config.api.provider = process.env.MIMO_PROVIDER as ProviderType;
+  if (process.env.MIMO_LOCALE) config.i18n.locale = process.env.MIMO_LOCALE as LocaleType;
+  if (process.env.MIMO_DEBUG === '1' || process.env.MIMO_DEBUG === 'true') {
+    config.debug.enabled = true;
+  }
+  if (process.env.OLLAMA_HOST) {
+    config.api.ollamaEndpoint = process.env.OLLAMA_HOST;
+  }
+  if (process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.trim()) {
+    config.api.openaiApiKey = process.env.OPENAI_API_KEY;
+  }
+  if (process.env.OPENAI_BASE_URL && process.env.OPENAI_BASE_URL.trim()) {
+    config.api.openaiEndpoint = process.env.OPENAI_BASE_URL;
+  }
   if (process.env.ANTHROPIC_BASE_URL && process.env.ANTHROPIC_BASE_URL.trim()) {
     // Only use env var if config file doesn't already have a baseUrl
     if (!config.api.payAsYouGo.baseUrl) {
@@ -100,7 +159,9 @@ export async function loadConfig(cliOptions: any = {}): Promise<MimoConfig> {
   return config;
 }
 
-// 获取完整的合并 settings（供 hooks 等子系统使用）
+// ── Settings Loading ───────────────────────────────────────────────
+
+/** Get the full merged settings (for hooks and other subsystems). */
 export async function loadMergedSettings(): Promise<Record<string, any>> {
   const homeDir = os.homedir();
   const cwd = process.cwd();
@@ -124,18 +185,158 @@ export async function loadMergedSettings(): Promise<Record<string, any>> {
         // skip malformed JSON
       }
     } catch {
-      // file doesn't exist — skip
+      // file does not exist -- skip
     }
   }
 
   return merged;
 }
 
+// ── Config Save ────────────────────────────────────────────────────
+
 export async function saveConfig(config: Partial<MimoConfig>): Promise<void> {
   await fs.mkdir(CONFIG_DIR, { recursive: true });
   const content = serializeToml(config);
   await fs.writeFile(CONFIG_FILE, content, 'utf-8');
 }
+
+// ── Config Migration (v1 -> v2) ────────────────────────────────────
+
+/**
+ * Migrate a v1 config to v2 format.
+ *
+ * Adds the new fields with their defaults while preserving all existing values.
+ * The migrated config is saved and the original is backed up.
+ */
+export async function migrateConfig(): Promise<{ migrated: boolean; message: string }> {
+  let rawConfig: Record<string, any>;
+
+  try {
+    const raw = await fs.readFile(CONFIG_FILE, 'utf-8');
+    rawConfig = toml.parse(raw);
+  } catch {
+    return { migrated: false, message: 'No config file found to migrate.' };
+  }
+
+  // Check if already v2
+  if (rawConfig.version && rawConfig.version >= 2) {
+    return { migrated: false, message: 'Config is already v2. No migration needed.' };
+  }
+
+  // Back up the v1 config
+  const backupPath = CONFIG_FILE + '.v1.bak';
+  try {
+    const raw = await fs.readFile(CONFIG_FILE, 'utf-8');
+    await fs.writeFile(backupPath, raw, 'utf-8');
+  } catch {
+    // If backup fails, proceed anyway
+  }
+
+  // Build v2 config by merging v1 data with v2 defaults
+  const v1Config = rawConfig as Partial<MimoConfigV1>;
+
+  // Ensure nested objects exist before merging
+  const v2Additions: Partial<MimoConfig> = {
+    version: 2,
+    api: {
+      ...(v1Config.api || {}),
+      provider: 'anthropic' as ProviderType,
+      ollamaEndpoint: 'http://localhost:11434',
+      openaiEndpoint: '',
+      openaiApiKey: '',
+      rateLimit: {
+        requestsPerMinute: 60,
+        minIntervalMs: 1000,
+        maxRetries: 3,
+      },
+    } as any,
+    i18n: {
+      locale: 'zh-CN' as LocaleType,
+    },
+    debug: {
+      enabled: false,
+    },
+    features: {
+      ...(v1Config.features || { enabled: true, disabledFeatures: [] }),
+      maturity: 'stable' as FeatureMaturity,
+    },
+  };
+
+  const migrated = deepMerge(DEFAULT_CONFIG, deepMerge(v1Config, v2Additions));
+
+  // Save the migrated config
+  await saveConfig(migrated);
+
+  return {
+    migrated: true,
+    message: `Config migrated from v1 to v2. Backup saved to ${backupPath}`,
+  };
+}
+
+// ── Config Get/Set Commands ────────────────────────────────────────
+
+/**
+ * Get a config value by dot-separated key path.
+ * Returns the value and its description.
+ */
+export async function configGet(keyPath: string): Promise<{ value: unknown; description: string }> {
+  const keyInfo = CONFIG_KEY_MAP[keyPath];
+  if (!keyInfo) {
+    const available = Object.keys(CONFIG_KEY_MAP).join(', ');
+    throw new Error(`Unknown config key: "${keyPath}".\nAvailable keys: ${available}`);
+  }
+
+  const config = await loadConfig();
+  const value = getConfigValue(config, keyPath);
+
+  return { value, description: keyInfo.description };
+}
+
+/**
+ * Set a config value by dot-separated key path.
+ * Validates the key and value, merges into existing config, and saves.
+ */
+export async function configSet(keyPath: string, rawValue: string): Promise<{ key: string; value: unknown; description: string }> {
+  const keyInfo = CONFIG_KEY_MAP[keyPath];
+  if (!keyInfo) {
+    const available = Object.keys(CONFIG_KEY_MAP).join(', ');
+    throw new Error(`Unknown config key: "${keyPath}".\nAvailable keys: ${available}`);
+  }
+
+  const value = parseConfigValue(keyPath, rawValue);
+
+  // Load current config, set the value, validate, then save
+  const config = await loadConfig();
+  const updated = setConfigValue(config, keyPath, value);
+
+  // Validate the updated config
+  const errors = validateConfig(updated);
+  if (errors.length > 0) {
+    const errorMessages = errors.map(e => `  [${e.path}] ${e.message}`).join('\n');
+    throw new Error(`Validation failed:\n${errorMessages}`);
+  }
+
+  await saveConfig(updated);
+
+  return { key: keyPath, value, description: keyInfo.description };
+}
+
+/**
+ * List all available config keys with their current values and descriptions.
+ */
+export async function configList(): Promise<Array<{ key: string; value: unknown; description: string; type: string }>> {
+  const config = await loadConfig();
+  const results: Array<{ key: string; value: unknown; description: string; type: string }> = [];
+
+  for (const [key, info] of Object.entries(CONFIG_KEY_MAP)) {
+    const value = getConfigValue(config, key);
+    results.push({ key, value, description: info.description, type: info.type });
+  }
+
+  return results;
+}
+
+// ── TOML Serialization ─────────────────────────────────────────────
 
 function serializeToml(obj: any, prefix = ''): string {
   const lines: string[] = [];
@@ -154,7 +355,7 @@ function serializeToml(obj: any, prefix = ''): string {
     }
   }
 
-  // Then: emit nested objects as [table] sections at the same level
+  // Then: emit nested objects as [table] sections
   for (const { key, value } of sections) {
     const fullKey = prefix ? `${prefix}.${key}` : key;
     const nested = serializeToml(value, fullKey);
@@ -169,15 +370,11 @@ function serializeToml(obj: any, prefix = ''): string {
 }
 
 function serializeTomlString(value: string): string {
-  // Check if we need a basic string or literal string
   const hasNewline = value.includes('\n');
   const hasTab = value.includes('\t');
-  const hasBackslash = value.includes('\\');
-  const hasDoubleQuote = value.includes('"');
   const hasControlChars = /[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(value);
 
   if (hasNewline || hasTab || hasControlChars) {
-    // Use multi-line basic string for values with newlines/tabs/control chars
     const escaped = value
       .replace(/\\/g, '\\\\')
       .replace(/"/g, '\\"')
@@ -191,7 +388,6 @@ function serializeTomlString(value: string): string {
     return `"${escaped}"`;
   }
 
-  // Simple escaping for regular strings
   const escaped = value
     .replace(/\\/g, '\\\\')
     .replace(/"/g, '\\"');
@@ -225,6 +421,8 @@ function serializeValue(key: string, value: any): string {
   return '';
 }
 
+// ── Deep Merge ─────────────────────────────────────────────────────
+
 function deepMerge(target: any, source: any): any {
   const result = { ...target };
   for (const key of Object.keys(source || {})) {
@@ -243,8 +441,6 @@ function deepMerge(target: any, source: any): any {
       !Array.isArray(source[key]) &&
       (!target[key] || typeof target[key] !== 'object')
     ) {
-      // Source is an object but target is missing or not an object —
-      // merge with empty object to preserve nested structure
       result[key] = deepMerge({}, source[key]);
     } else if (source[key] !== undefined) {
       result[key] = source[key];

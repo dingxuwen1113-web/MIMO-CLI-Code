@@ -218,10 +218,10 @@ async function showApiKeyPage(rl: readline.Interface, apiMode: string): Promise<
   if (apiMode === 'token-plan') {
     boxLine(`  ${WHITE('Token Plan 模式')}`);
     boxLine('');
-    boxLine(`  ${GRAY('请获取你的小米 MIMO Token Plan API Key：')}`);
-    boxLine(`  ${ORANGE_L('  → https://mimo.xiaomi.com/api-keys')}`);
+    boxLine(`  ${GRAY('请获取你的 API Key：')}`);
+    boxLine(`  ${ORANGE_L('  → https://console.anthropic.com/settings/keys')}`);
     boxLine('');
-    boxLine(`  ${GRAY('Key 格式：')}${ORANGE_L('tp-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')}`);
+    boxLine(`  ${GRAY('Key 格式：')}${ORANGE_L('sk-ant-api03-xxxxxxxxxxxxxxxx')}`);
     boxLine('');
   } else {
     boxLine(`  ${WHITE('按量付费模式')}`);
@@ -263,40 +263,34 @@ async function showBaseUrlPage(rl: readline.Interface, apiMode: string): Promise
   if (apiMode === 'token-plan') {
     boxLine(`  ${WHITE('Token Plan 默认端点')}`);
     boxLine('');
-    boxLine(`  ${ORANGE_L('  https://token-plan-cn.xiaomimimo.com/anthropic')}`);
+    boxLine(`  ${GRAY('请配置你的 Token Plan API 端点')}`);
     boxLine('');
-    boxLine(`  ${GRAY('如果你在大陆地区，建议使用默认端点（已优化国内网络）')}`);
     boxLine(`  ${GRAY('如果你有自建代理，可以输入自定义 URL')}`);
     boxLine('');
     boxClose();
     console.log('');
 
-    const useDefault = await confirm(rl, '使用默认端点？', true);
-    if (useDefault) {
-      return 'https://token-plan-cn.xiaomimimo.com/anthropic';
-    }
+    const customUrl = await prompt(rl, '输入 Base URL', 'https://api.anthropic.com');
+    return customUrl || 'https://api.anthropic.com';
   } else {
     boxLine(`  ${WHITE('按量付费端点选项')}`);
     boxLine('');
-    boxLine(`  ${ORANGE('●')} ${WHITE('官方端点')}       ${GRAY('https://api.anthropic.com')}`);
-    boxLine(`  ${ORANGE('●')} ${WHITE('小米 MIMO 代理')} ${GRAY('https://token-plan-cn.xiaomimimo.com/anthropic')}`);
-    boxLine(`  ${ORANGE('●')} ${WHITE('自定义代理')}     ${GRAY('输入你自己的代理 URL')}`);
+    boxLine(`  ${ORANGE('●')} ${WHITE('官方端点')}   ${GRAY('https://api.anthropic.com')}`);
+    boxLine(`  ${ORANGE('●')} ${WHITE('自定义代理')} ${GRAY('输入你自己的代理 URL')}`);
     boxLine('');
     boxClose();
     console.log('');
 
     const choice = await select(rl, '选择端点', [
       { key: 'official', label: '官方端点', desc: 'https://api.anthropic.com' },
-      { key: 'mimo', label: 'MIMO 代理', desc: 'https://token-plan-cn.xiaomimimo.com/anthropic' },
       { key: 'custom', label: '自定义', desc: '输入自定义 URL' },
-    ], 'mimo');
+    ], 'official');
 
     if (choice === 'official') return 'https://api.anthropic.com';
-    if (choice === 'mimo') return 'https://token-plan-cn.xiaomimimo.com/anthropic';
   }
 
   console.log('');
-  return await prompt(rl, '输入自定义 Base URL', 'https://token-plan-cn.xiaomimimo.com/anthropic');
+  return await prompt(rl, '输入自定义 Base URL', 'https://api.anthropic.com');
 }
 
 // ── 页面 5: 模型选择 ──────────────────────────
