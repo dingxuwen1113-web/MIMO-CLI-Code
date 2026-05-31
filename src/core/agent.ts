@@ -18,7 +18,6 @@ import { MCPClient } from '../mcp/client';
 import { ModelRouter } from './router';
 import { Charter } from './charter';
 import { ContextCompressor } from './compressor';
-import { RetryManager } from './retry';
 import { SubagentManager } from '../subagent/manager';
 import { TaskManager } from '../task/manager';
 import { checkToolSafety } from '../security/checks';
@@ -140,7 +139,6 @@ export class MimoAgent {
   private checkpoint: CheckpointManager;
   private sessionResumeData?: SessionData | null;
   private compressor: ContextCompressor;
-  private retryManager: RetryManager;
   private subagentManager: SubagentManager;
 
   private conversationHistory: ConversationMessage[] = [];
@@ -191,7 +189,6 @@ export class MimoAgent {
     this.checkpoint.init().catch(() => {});
 
     this.compressor = new ContextCompressor(deps.apiClient);
-    this.retryManager = new RetryManager();
     this.subagentManager = new SubagentManager(deps.apiClient, deps.tools, deps.charter);
 
     this.sessionFile = path.join(SESSIONS_DIR, `${this.sessionId}.json`);
@@ -977,26 +974,11 @@ export class MimoAgent {
 
         this.turnCount++;
       } catch (err: any) {
-        const msg = err.message || String(err);
-        // 429/529 重试（API adapter 的 rate limiter 已处理冷却，这里只需短暂缓冲）
-        if (msg.includes('429') || msg.includes('rate_limit') ||
-            msg.includes('529') || msg.includes('overloaded') ||
-            msg.includes('rate limit')) {
-          this.errorCount++;
-          if (this.errorCount <= 5) {
-            // 短延迟 — rate limiter 会在下次请求前等待更长时间
-            const delay = 2000;
-            if (!this.nonInteractive) {
-              process.stdout.write(`\r\x1b[K  rate limited, retry ${this.errorCount}/5, waiting for cooldown...`);
-            }
-            await new Promise(r => setTimeout(r, delay));
-            continue; // 重试（rate limiter 会在下次 API 调用时强制等待）
-          }
-        }
-        // 其他错误或重试次数用完
-        if (!this.nonInteractive) process.stdout.write('\r\x1b[K'); // 清除 rate limit 提示行
+        // 429/529 errors are already retried by the global rate limiter.
+        // If they still escape (retries exhausted), handleApiError suppresses them silently.
+        if (!this.nonInteractive) process.stdout.write('\r\x1b[K');
         this.handleApiError(err);
-        this.errorCount = 0; // 重置计数
+        this.errorCount = 0;
         break;
       }
     }
@@ -1050,9 +1032,9 @@ export class MimoAgent {
     if (msg.includes('401') || msg.includes('Unauthorized')) {
       errorMsg = 'API Key 无效 / API Key invalid. 请运行 mimo init 重新配置 / Run mimo init to reconfigure.';
     } else if (msg.includes('429') || msg.includes('rate_limit') || msg.includes('rate limit')) {
-      // 静默重试，不打印警告
+      errorMsg = 'API 请求被拒绝(429) / Request rejected by API. 请检查 API Key、baseUrl 和代理配置是否正确 / Check API key, baseUrl, and proxy config. 运行 mimo init 重新配置 / Run mimo init to reconfigure.';
     } else if (msg.includes('529') || msg.includes('overloaded')) {
-      // 静默重试
+      errorMsg = 'API 过载 / API overloaded. 请稍等片刻后重试 / Please wait and retry.';
     } else if (msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND')) {
       errorMsg = '无法连接 API / Cannot connect to API. 请检查网络和端点配置 / Check network and endpoint config.';
     } else if (msg.includes('timeout') || msg.includes('ETIMEDOUT')) {
@@ -1618,6 +1600,19 @@ export class MimoAgent {
         const stats = this.apiClient.getUsageStats();
         const budget = this.apiClient.getBudgetInfo();
         printUsageStats(stats, budget);
+
+        // Rate limiter stats
+        try {
+          const { getGlobalRateLimiter } = require('../api/rate-limiter');
+          const rl = getGlobalRateLimiter();
+          const rlStats = rl.getStats();
+          const rlConfig = rl.getConfig();
+          console.log(`\n  ${ORANGE('Rate Limiter')}`);
+          console.log(`  Requests: ${rlStats.totalRequests} total, ${rlStats.total429s} rate-limited, ${rlStats.successRate}% success`);
+          console.log(`  Retries: ${rlStats.totalRetries}, Waits: ${rlStats.totalWaits} (${Math.round(rlStats.totalWaitMs / 1000)}s total)`);
+          console.log(`  Cooldown: level ${rlStats.cooldownLevel}, ${rlStats.cooldownActive ? `active (${Math.round(rlStats.cooldownRemainingMs / 1000)}s left)` : 'inactive'}`);
+          console.log(`  Config: ${rlConfig.requestsPerMinute} RPM, ${rlConfig.minIntervalMs}ms min interval, ${rlConfig.maxRetries} max retries`);
+        } catch { /* rate limiter stats are non-critical */ }
         break;
       }
 

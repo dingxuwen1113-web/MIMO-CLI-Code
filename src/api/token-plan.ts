@@ -1,7 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk';
+import * as https from 'https';
 import { MimoConfig } from '../config/schema';
 import { ApiAdapter, BudgetInfo, UsageStats, StreamCallbacks } from './types';
-import { RateLimiter } from './rate-limiter';
+import { getGlobalRateLimiter } from './rate-limiter';
 
 export class TokenPlanAdapter implements ApiAdapter {
   private client: Anthropic;
@@ -17,34 +18,27 @@ export class TokenPlanAdapter implements ApiAdapter {
     totalCost: 0,
   };
 
-  // Prompt caching TTL 管理
   private cacheTimestamps: Map<string, number> = new Map();
   private cacheTtl: number;
-
-  // Rate limiter
-  private rateLimiter: RateLimiter;
+  private baseUrl: string;
+  private apiKey: string;
 
   constructor(config: MimoConfig) {
     this.config = config;
     this.monthlyBudget = config.api.tokenPlan.monthlyBudget;
-    this.cacheTtl = (config.promptCaching.cacheTtl || 300) * 1000; // 转为毫秒
+    this.cacheTtl = (config.promptCaching.cacheTtl || 300) * 1000;
+    this.baseUrl = config.api.tokenPlan.baseUrl || '';
+    this.apiKey = config.api.tokenPlan.apiKey;
 
     const clientOpts: Record<string, any> = {
-      apiKey: config.api.tokenPlan.apiKey,
-      timeout: 120_000, // 2 分钟超时，避免 AI 推理请求被过早中断
+      apiKey: this.apiKey,
+      maxRetries: 0,
+      timeout: 120_000,
     };
-    const baseUrl = config.api.tokenPlan.baseUrl || process.env.ANTHROPIC_BASE_URL;
-    if (baseUrl) {
-      clientOpts.baseURL = baseUrl;
+    if (this.baseUrl) {
+      clientOpts.baseURL = this.baseUrl;
     }
     this.client = new Anthropic(clientOpts as any);
-
-    this.rateLimiter = new RateLimiter({
-      requestsPerMinute: 30,
-      minIntervalMs: 1200,
-      cooldownBaseMs: 5000,
-      cooldownMaxMs: 60000,
-    });
   }
 
   resolveModel(requestedModel: string): string {
@@ -73,23 +67,37 @@ export class TokenPlanAdapter implements ApiAdapter {
       tools,
     };
 
-    // Thinking 模式
     if (options.thinking) {
       createParams.thinking = {
         type: 'enabled',
         budget_tokens: Math.min(maxTokens * 2, 128000),
       };
-      // Thinking 模式需要 higher max_tokens
       createParams.max_tokens = Math.max(maxTokens, 64000);
     }
 
+    const limiter = getGlobalRateLimiter();
     try {
-      await this.rateLimiter.wait();
-      const response = await this.client.messages.create(createParams);
-      this.rateLimiter.onSuccess();
+      // Use raw HTTP directly for non-streaming (avoids SDK streaming requirement)
+      const response = await limiter.enqueue(
+        () => this.rawHttpRequest(createParams),
+      );
       this.trackUsage(response.usage);
       return response;
     } catch (err: any) {
+      // If pro model gets 429, auto-downgrade to mimo-v2.5 and retry
+      if (err?.status === 429 && model === 'mimo-v2.5-pro') {
+        console.error('[DEBUG] mimo-v2.5-pro got 429, downgrading to mimo-v2.5...');
+        createParams.model = 'mimo-v2.5';
+        try {
+          const response = await limiter.enqueue(
+            () => this.rawHttpRequest(createParams),
+          );
+          this.trackUsage(response.usage);
+          return response;
+        } catch (retryErr: any) {
+          throw this.wrapApiError(retryErr);
+        }
+      }
       throw this.wrapApiError(err);
     }
   }
@@ -124,31 +132,54 @@ export class TokenPlanAdapter implements ApiAdapter {
       streamParams.max_tokens = Math.max(maxTokens, 64000);
     }
 
-    const stream = this.client.messages.stream(streamParams);
-
-    stream.on('text', (text) => callbacks.onText?.(text));
-
-    // Extended thinking streaming
-    stream.on('thinking', (thinkingDelta: string, _snapshot: string) => {
-      callbacks.onThinking?.(thinkingDelta);
-    });
-
-    stream.on('contentBlock', (block) => {
-      if (block.type === 'tool_use') {
-        callbacks.onToolUse?.(block as Anthropic.ToolUseBlock);
-      }
-      if (block.type === 'thinking') {
-        callbacks.onThinking?.((block as any).thinking || '');
-      }
-    });
-
+    const limiter = getGlobalRateLimiter();
     try {
-      await this.rateLimiter.wait();
-      const finalMessage = await stream.finalMessage();
-      this.rateLimiter.onSuccess();
+      const finalMessage = await limiter.enqueue(async () => {
+        let textEmitted = false;
+        const stream = this.client.messages.stream(streamParams);
+
+        stream.on('text', (text) => {
+          textEmitted = true;
+          callbacks.onText?.(text);
+        });
+        stream.on('thinking', (thinkingDelta: string, _snapshot: string) => {
+          callbacks.onThinking?.(thinkingDelta);
+        });
+        stream.on('contentBlock', (block) => {
+          if (block.type === 'tool_use') {
+            callbacks.onToolUse?.(block as Anthropic.ToolUseBlock);
+          }
+          if (block.type === 'thinking') {
+            callbacks.onThinking?.((block as any).thinking || '');
+          }
+        });
+
+        try {
+          return await stream.finalMessage();
+        } catch (innerErr: any) {
+          if (textEmitted && (innerErr?.status === 429 || String(innerErr?.message).includes('429'))) {
+            // Text was already streamed to the user — don't retry, it would duplicate
+            const err = new Error('429_rate_limit: Rate limit during streaming (partial response already sent).');
+            (err as any).__noRetry = true;
+            throw err;
+          }
+          throw innerErr;
+        }
+      }, {
+        onRetry: (attempt, delayMs) => {
+          const sec = Math.round(delayMs / 1000);
+          process.stdout.write(`\r\x1b[K  rate limited, retry ${attempt}/5, waiting ${sec}s...\r`);
+        },
+      });
+
       this.trackUsage(finalMessage.usage);
       return finalMessage;
     } catch (err: any) {
+      // If streaming gets 429, fall back to non-streaming chat() which has raw HTTP fallback
+      if (err?.status === 429) {
+        console.error('[DEBUG] Streaming got 429, falling back to non-streaming (with auto model downgrade)...');
+        return this.chat(messages, tools, systemPrompt, options);
+      }
       throw this.wrapApiError(err);
     }
   }
@@ -168,9 +199,7 @@ export class TokenPlanAdapter implements ApiAdapter {
     return stats;
   }
 
-  // Token counting (approximation)
   countTokens(text: string): number {
-    // 中文约 1.5 字/token，英文约 4 字符/token
     const chineseChars = (text.match(/[一-鿿]/g) || []).length;
     const otherChars = text.length - chineseChars;
     return Math.ceil(chineseChars / 1.5 + otherChars / 4);
@@ -180,7 +209,7 @@ export class TokenPlanAdapter implements ApiAdapter {
     let total = 0;
     for (const msg of messages) {
       const text = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
-      total += this.countTokens(text) + 4; // role overhead
+      total += this.countTokens(text) + 4;
     }
     return total;
   }
@@ -190,7 +219,6 @@ export class TokenPlanAdapter implements ApiAdapter {
       return [{ type: 'text', text: systemPrompt }];
     }
 
-    // 检查缓存是否过期
     const cacheKey = 'system-prompt';
     const lastCached = this.cacheTimestamps.get(cacheKey) || 0;
     const now = Date.now();
@@ -222,6 +250,56 @@ export class TokenPlanAdapter implements ApiAdapter {
     }
   }
 
+  /**
+   * Raw HTTP request that bypasses the Anthropic SDK entirely.
+   * Mimics the exact curl format that works with the MiFE proxy.
+   */
+  private rawHttpRequest(params: any): Promise<Anthropic.Message> {
+    return new Promise((resolve, reject) => {
+      const url = new URL(this.baseUrl + '/v1/messages');
+      const body = JSON.stringify(params);
+
+      const reqOptions: https.RequestOptions = {
+        hostname: url.hostname,
+        port: url.port || 443,
+        path: url.pathname,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': this.apiKey,
+          'anthropic-version': '2023-06-01',
+          'Content-Length': Buffer.byteLength(body),
+        },
+      };
+
+      const req = https.request(reqOptions, (res) => {
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => {
+          if (res.statusCode === 200) {
+            try {
+              const parsed = JSON.parse(data);
+              console.error(`[DEBUG] Raw HTTP SUCCESS → ${res.statusCode}, model: ${parsed.model || 'unknown'}`);
+              resolve(parsed as Anthropic.Message);
+            } catch (e) {
+              reject(new Error(`Failed to parse response: ${data.slice(0, 200)}`));
+            }
+          } else {
+            console.error(`[DEBUG] Raw HTTP FAILED → ${res.statusCode}: ${data.slice(0, 200)}`);
+            const err = new Error(`${res.statusCode} ${data}`);
+            (err as any).status = res.statusCode;
+            (err as any).headers = res.headers;
+            reject(err);
+          }
+        });
+      });
+
+      req.on('error', reject);
+      req.write(body);
+      req.end();
+    });
+  }
+
   private trackUsage(usage: Anthropic.Usage): void {
     this.usage.inputTokens += usage.input_tokens;
     this.usage.outputTokens += usage.output_tokens;
@@ -231,7 +309,6 @@ export class TokenPlanAdapter implements ApiAdapter {
   }
 
   private calculateCost(stats: UsageStats): number {
-    // Claude Sonnet 4 pricing (per 1M tokens)
     const inputCost = (stats.inputTokens / 1_000_000) * 3;
     const outputCost = (stats.outputTokens / 1_000_000) * 15;
     const cacheReadCost = (stats.cacheReadTokens / 1_000_000) * 0.30;
@@ -242,6 +319,8 @@ export class TokenPlanAdapter implements ApiAdapter {
   private wrapApiError(err: any): Error {
     const status = err?.status || err?.statusCode || err?.error?.status;
     const message = err?.message || String(err);
+    const headers = err?.headers ? JSON.stringify(err.headers) : '(no headers)';
+    console.error(`[DEBUG] API error → status: ${status}, message: ${message.slice(0, 100)}, headers: ${headers}`);
 
     if (status === 401 || message.includes('401')) {
       return new Error('Token Plan API key is invalid or expired. Run "mimo init" to reconfigure.');
@@ -250,15 +329,10 @@ export class TokenPlanAdapter implements ApiAdapter {
       return new Error('Token Plan API key does not have permission for this operation. Check your plan limits.');
     }
     if (status === 429 || message.includes('429')) {
-      // Extract Retry-After header and tell rate limiter
-      const retryAfter = err?.headers?.['retry-after'];
-      const retryAfterSec = retryAfter ? parseInt(retryAfter, 10) : undefined;
-      this.rateLimiter.backoff(retryAfterSec && retryAfterSec > 0 ? retryAfterSec : undefined);
-      const waitMsg = retryAfterSec ? ` Retry after ${retryAfterSec} seconds.` : '';
-      return new Error(`429_rate_limit:${waitMsg}`);
+      // Rate limiter already exhausted retries — surface as non-fatal
+      return new Error('429_rate_limit: Rate limit exceeded after retries. Please wait a moment and try again.');
     }
     if (status === 529 || message.includes('529')) {
-      this.rateLimiter.backoff(); // Also back off on 529
       return new Error('529_overloaded: API is temporarily overloaded.');
     }
     if (message.includes('ECONNREFUSED') || message.includes('ENOTFOUND')) {
