@@ -1,7 +1,11 @@
 import Anthropic from '@anthropic-ai/sdk';
+import createDebug from 'debug';
 import { MimoConfig } from '../config/schema';
 import { ApiAdapter, BudgetInfo, UsageStats, StreamCallbacks } from './types';
-import { RateLimiter } from './rate-limiter';
+import { getGlobalRateLimiter } from './rate-limiter';
+import { getSharedHttpAgents } from './http-client';
+
+const debug = createDebug('mimo:api');
 
 export class TokenPlanAdapter implements ApiAdapter {
   private client: Anthropic;
@@ -17,34 +21,26 @@ export class TokenPlanAdapter implements ApiAdapter {
     totalCost: 0,
   };
 
-  // Prompt caching TTL 管理
   private cacheTimestamps: Map<string, number> = new Map();
   private cacheTtl: number;
-
-  // Rate limiter
-  private rateLimiter: RateLimiter;
 
   constructor(config: MimoConfig) {
     this.config = config;
     this.monthlyBudget = config.api.tokenPlan.monthlyBudget;
-    this.cacheTtl = (config.promptCaching.cacheTtl || 300) * 1000; // 转为毫秒
+    this.cacheTtl = (config.promptCaching.cacheTtl || 300) * 1000;
 
+    const { httpAgent, httpsAgent } = getSharedHttpAgents();
     const clientOpts: Record<string, any> = {
       apiKey: config.api.tokenPlan.apiKey,
-      timeout: 120_000, // 2 分钟超时，避免 AI 推理请求被过早中断
+      maxRetries: 0,
+      timeout: 120_000,
+      httpAgent,
+      httpsAgent,
     };
-    const baseUrl = config.api.tokenPlan.baseUrl || process.env.ANTHROPIC_BASE_URL;
-    if (baseUrl) {
-      clientOpts.baseURL = baseUrl;
+    if (config.api.tokenPlan.baseUrl) {
+      clientOpts.baseURL = config.api.tokenPlan.baseUrl;
     }
     this.client = new Anthropic(clientOpts as any);
-
-    this.rateLimiter = new RateLimiter({
-      requestsPerMinute: 30,
-      minIntervalMs: 1200,
-      cooldownBaseMs: 5000,
-      cooldownMaxMs: 60000,
-    });
   }
 
   resolveModel(requestedModel: string): string {
@@ -73,23 +69,35 @@ export class TokenPlanAdapter implements ApiAdapter {
       tools,
     };
 
-    // Thinking 模式
     if (options.thinking) {
       createParams.thinking = {
         type: 'enabled',
         budget_tokens: Math.min(maxTokens * 2, 128000),
       };
-      // Thinking 模式需要 higher max_tokens
       createParams.max_tokens = Math.max(maxTokens, 64000);
     }
 
+    const limiter = getGlobalRateLimiter();
     try {
-      await this.rateLimiter.wait();
-      const response = await this.client.messages.create(createParams);
-      this.rateLimiter.onSuccess();
+      const response = await limiter.enqueue(
+        () => this.client.messages.create(createParams),
+      );
       this.trackUsage(response.usage);
       return response;
     } catch (err: any) {
+      if (err?.status === 429 && model === 'mimo-v2.5-pro') {
+        debug('mimo-v2.5-pro got 429, downgrading to mimo-v2.5');
+        createParams.model = 'mimo-v2.5';
+        try {
+          const response = await limiter.enqueue(
+            () => this.client.messages.create(createParams),
+          );
+          this.trackUsage(response.usage);
+          return response;
+        } catch (retryErr: any) {
+          throw this.wrapApiError(retryErr);
+        }
+      }
       throw this.wrapApiError(err);
     }
   }
@@ -124,31 +132,60 @@ export class TokenPlanAdapter implements ApiAdapter {
       streamParams.max_tokens = Math.max(maxTokens, 64000);
     }
 
-    const stream = this.client.messages.stream(streamParams);
-
-    stream.on('text', (text) => callbacks.onText?.(text));
-
-    // Extended thinking streaming
-    stream.on('thinking', (thinkingDelta: string, _snapshot: string) => {
-      callbacks.onThinking?.(thinkingDelta);
-    });
-
-    stream.on('contentBlock', (block) => {
-      if (block.type === 'tool_use') {
-        callbacks.onToolUse?.(block as Anthropic.ToolUseBlock);
-      }
-      if (block.type === 'thinking') {
-        callbacks.onThinking?.((block as any).thinking || '');
-      }
-    });
-
+    const limiter = getGlobalRateLimiter();
     try {
-      await this.rateLimiter.wait();
-      const finalMessage = await stream.finalMessage();
-      this.rateLimiter.onSuccess();
+      const finalMessage = await limiter.enqueue(async () => {
+        let textEmitted = false;
+        const stream = this.client.messages.stream(streamParams);
+
+        // Buffer thinking output — render once at block end, not per-delta
+        let thinkingBuffer = '';
+
+        stream.on('text', (text) => {
+          textEmitted = true;
+          callbacks.onText?.(text);
+        });
+
+        stream.on('thinking', (thinkingDelta: string) => {
+          thinkingBuffer += thinkingDelta;
+        });
+
+        stream.on('contentBlock', (block) => {
+          if (block.type === 'tool_use') {
+            callbacks.onToolUse?.(block as Anthropic.ToolUseBlock);
+          }
+          // Flush accumulated thinking when the block ends
+          if (block.type === 'thinking' && thinkingBuffer) {
+            callbacks.onThinking?.(thinkingBuffer);
+            thinkingBuffer = '';
+          }
+        });
+
+        try {
+          return await stream.finalMessage();
+        } catch (innerErr: any) {
+          if (textEmitted && (innerErr?.status === 429 || String(innerErr?.message).includes('429'))) {
+            const err = new Error('429_rate_limit: Rate limit during streaming (partial response already sent).');
+            (err as any).__noRetry = true;
+            throw err;
+          }
+          throw innerErr;
+        }
+      }, {
+        onRetry: (attempt, delayMs) => {
+          const sec = Math.round(delayMs / 1000);
+          process.stdout.write(`\r\x1b[K  rate limited, retry ${attempt}/5, waiting ${sec}s...\r`);
+        },
+      });
+
       this.trackUsage(finalMessage.usage);
       return finalMessage;
     } catch (err: any) {
+      // If streaming gets 429, fall back to non-streaming chat() which has SDK retry logic
+      if (err?.status === 429) {
+        debug('Streaming got 429, falling back to non-streaming (with auto model downgrade)');
+        return this.chat(messages, tools, systemPrompt, options);
+      }
       throw this.wrapApiError(err);
     }
   }
@@ -168,9 +205,7 @@ export class TokenPlanAdapter implements ApiAdapter {
     return stats;
   }
 
-  // Token counting (approximation)
   countTokens(text: string): number {
-    // 中文约 1.5 字/token，英文约 4 字符/token
     const chineseChars = (text.match(/[一-鿿]/g) || []).length;
     const otherChars = text.length - chineseChars;
     return Math.ceil(chineseChars / 1.5 + otherChars / 4);
@@ -180,7 +215,7 @@ export class TokenPlanAdapter implements ApiAdapter {
     let total = 0;
     for (const msg of messages) {
       const text = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
-      total += this.countTokens(text) + 4; // role overhead
+      total += this.countTokens(text) + 4;
     }
     return total;
   }
@@ -190,7 +225,6 @@ export class TokenPlanAdapter implements ApiAdapter {
       return [{ type: 'text', text: systemPrompt }];
     }
 
-    // 检查缓存是否过期
     const cacheKey = 'system-prompt';
     const lastCached = this.cacheTimestamps.get(cacheKey) || 0;
     const now = Date.now();
@@ -210,7 +244,16 @@ export class TokenPlanAdapter implements ApiAdapter {
   }
 
   private checkBudget(): void {
-    // 无限制模式，不做预算检查
+    if (this.monthlyBudget <= 0) return;
+    const pct = (this.usedTokens / this.monthlyBudget) * 100;
+    if (pct >= 100) {
+      throw new Error(`Budget exhausted: ${this.usedTokens.toLocaleString()}/${this.monthlyBudget.toLocaleString()} tokens used this period. Upgrade your plan or wait for reset.`);
+    }
+    if (pct >= 90) {
+      console.error(`\x1b[31m[budget] WARNING: ${pct.toFixed(0)}% of monthly budget used (${this.usedTokens.toLocaleString()}/${this.monthlyBudget.toLocaleString()} tokens)\x1b[0m`);
+    } else if (pct >= 80) {
+      console.warn(`\x1b[33m[budget] ${pct.toFixed(0)}% of monthly budget used (${this.usedTokens.toLocaleString()}/${this.monthlyBudget.toLocaleString()} tokens)\x1b[0m`);
+    }
   }
 
   private trackUsage(usage: Anthropic.Usage): void {
@@ -222,7 +265,6 @@ export class TokenPlanAdapter implements ApiAdapter {
   }
 
   private calculateCost(stats: UsageStats): number {
-    // Claude Sonnet 4 pricing (per 1M tokens)
     const inputCost = (stats.inputTokens / 1_000_000) * 3;
     const outputCost = (stats.outputTokens / 1_000_000) * 15;
     const cacheReadCost = (stats.cacheReadTokens / 1_000_000) * 0.30;
@@ -233,6 +275,7 @@ export class TokenPlanAdapter implements ApiAdapter {
   private wrapApiError(err: any): Error {
     const status = err?.status || err?.statusCode || err?.error?.status;
     const message = err?.message || String(err);
+    debug('API error → status: %d, message: %s', status, message.slice(0, 100));
 
     if (status === 401 || message.includes('401')) {
       return new Error('Token Plan API key is invalid or expired. Run "mimo init" to reconfigure.');
@@ -241,15 +284,9 @@ export class TokenPlanAdapter implements ApiAdapter {
       return new Error('Token Plan API key does not have permission for this operation. Check your plan limits.');
     }
     if (status === 429 || message.includes('429')) {
-      // Extract Retry-After header and tell rate limiter
-      const retryAfter = err?.headers?.['retry-after'];
-      const retryAfterSec = retryAfter ? parseInt(retryAfter, 10) : undefined;
-      this.rateLimiter.backoff(retryAfterSec && retryAfterSec > 0 ? retryAfterSec : undefined);
-      const waitMsg = retryAfterSec ? ` Retry after ${retryAfterSec} seconds.` : '';
-      return new Error(`429_rate_limit:${waitMsg}`);
+      return new Error('429_rate_limit: Rate limit exceeded after retries. Please wait a moment and try again.');
     }
     if (status === 529 || message.includes('529')) {
-      this.rateLimiter.backoff(); // Also back off on 529
       return new Error('529_overloaded: API is temporarily overloaded.');
     }
     if (message.includes('ECONNREFUSED') || message.includes('ENOTFOUND')) {

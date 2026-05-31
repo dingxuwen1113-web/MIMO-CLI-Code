@@ -5,6 +5,8 @@ import { FeatureModule, FeatureContext } from '../registry';
 import { readFileSafe, getSourceFiles, runCommand, countLines } from '../utils';
 import * as path from 'path';
 import * as fs from 'fs/promises';
+import createDebug from 'debug';
+const debug = createDebug('mimo:features:quality');
 
 // ══════════════════════════════════════════════════════
 // Feature 8: Mutation Testing
@@ -17,6 +19,7 @@ class MutationTester {
   async generateMutations(filePath: string): Promise<Mutation[]> {
     const content = await readFileSafe(filePath);
     if (!content) return [];
+    debug('Generating mutations for %s (%d chars)', filePath, content.length);
     const lines = content.split('\n');
     const mutations: Mutation[] = [];
     const operators = [
@@ -43,6 +46,7 @@ class MutationTester {
         }
       }
     }
+    debug('Generated %d mutations for %s', mutations.length, filePath);
     return mutations;
   }
 
@@ -59,12 +63,13 @@ class MutationTester {
 const mutationTester = new MutationTester();
 
 export const MutationTestingFeature: FeatureModule = {
-  meta: { id: 'mutation-testing', name: 'Mutation Testing', description: 'Generate code mutations and check if tests catch them', category: 'quality', enabled: true, priority: 'P2' },
+  meta: { id: 'mutation-testing', name: 'Mutation Testing', description: 'Generate code mutations and check if tests catch them', category: 'quality', enabled: true, priority: 'P2', maturity: 'beta' },
   getTools() {
     return [{
       name: 'mutation_test',
       definition: { name: 'mutation_test', description: 'Generate and analyze code mutations to test robustness', input_schema: { type: 'object' as const, properties: { file: { type: 'string', description: 'File to mutate' } }, required: ['file'] } },
       execute: async (input: any) => {
+        debug('Tool: mutation_test called for %s', input.file);
         const mutations = await mutationTester.generateMutations(input.file);
         const tests = await mutationTester.runTestSuite();
         return { output: `Generated ${mutations.length} mutations\nTest suite: ${tests.passed} passed, ${tests.failed} failed\n${mutations.slice(0, 10).map(m => `L${m.line}: ${m.original} → ${m.mutated}`).join('\n')}`, isError: false };
@@ -81,6 +86,7 @@ interface DebtScore { file: string; score: number; issues: string[]; complexity:
 class DebtAnalyzer {
   async analyze(projectDir: string): Promise<DebtScore[]> {
     const files = await getSourceFiles(projectDir);
+    debug('Analyzing debt across %d files', files.length);
     const scores: DebtScore[] = [];
 
     for (const f of files.slice(0, 100)) {
@@ -118,7 +124,9 @@ class DebtAnalyzer {
       scores.push({ file: f, score, issues, complexity: maxNest, duplication: 0, todoCount, lineCount: lines.length });
     }
 
-    return scores.sort((a, b) => b.score - a.score);
+    const sorted = scores.sort((a, b) => b.score - a.score);
+    debug('Debt analysis complete: %d files, total score %d', sorted.length, sorted.reduce((a, s) => a + s.score, 0));
+    return sorted;
   }
 
   private countLongFunctions(content: string): number {
@@ -142,12 +150,13 @@ class DebtAnalyzer {
 const debtAnalyzer = new DebtAnalyzer();
 
 export const DebtScoringFeature: FeatureModule = {
-  meta: { id: 'debt-scoring', name: 'Technical Debt Scoring', description: 'Per-file complexity and debt metrics', category: 'quality', enabled: true, priority: 'P1' },
+  meta: { id: 'debt-scoring', name: 'Technical Debt Scoring', description: 'Per-file complexity and debt metrics', category: 'quality', enabled: true, priority: 'P1', maturity: 'stable' },
   getTools() {
     return [{
       name: 'analyze_debt',
       definition: { name: 'analyze_debt', description: 'Analyze technical debt across the project', input_schema: { type: 'object' as const, properties: { path: { type: 'string', description: 'Directory to analyze (default: current)' } } } },
       execute: async (input: any) => {
+        debug('Tool: analyze_debt called for %s', input.path || 'current directory');
         const scores = await debtAnalyzer.analyze(input.path || process.cwd());
         const totalDebt = scores.reduce((a, s) => a + s.score, 0);
         const top10 = scores.slice(0, 10);
@@ -207,6 +216,7 @@ class RealtimeReviewer {
   }
 
   reviewCode(code: string, filePath: string): ReviewFinding[] {
+    debug('Reviewing code in %s (%d chars)', filePath, code.length);
     const findings: ReviewFinding[] = [];
     const lines = code.split('\n');
     for (let i = 0; i < lines.length; i++) {
@@ -222,7 +232,7 @@ class RealtimeReviewer {
 const reviewer = new RealtimeReviewer();
 
 export const RealtimeReviewFeature: FeatureModule = {
-  meta: { id: 'realtime-review', name: 'Real-time Review Stream', description: 'Review code as it is generated for issues', category: 'quality', enabled: true, priority: 'P1' },
+  meta: { id: 'realtime-review', name: 'Real-time Review Stream', description: 'Review code as it is generated for issues', category: 'quality', enabled: true, priority: 'P1', maturity: 'beta' },
   async onEvent(event: string, data: any) {
     if (event === 'code_generated' && data.code && data.file) {
       const findings = reviewer.reviewCode(data.code, data.file);
@@ -286,7 +296,7 @@ class APIContractValidator {
 const contractValidator = new APIContractValidator();
 
 export const APIContractFeature: FeatureModule = {
-  meta: { id: 'api-contract', name: 'API Contract Validator', description: 'Extract and validate API endpoint contracts', category: 'quality', enabled: true, priority: 'P2' },
+  meta: { id: 'api-contract', name: 'API Contract Validator', description: 'Extract and validate API endpoint contracts', category: 'quality', enabled: true, priority: 'P2', maturity: 'experimental' },
   getTools() {
     return [{
       name: 'validate_api_contracts',
@@ -305,6 +315,7 @@ export const APIContractFeature: FeatureModule = {
 class DeadCodeDetector {
   async detect(projectDir: string): Promise<Array<{ file: string; name: string; line: number; type: string }>> {
     const files = await getSourceFiles(projectDir);
+    debug('Detecting dead code across %d files', files.length);
     const exports: Array<{ name: string; file: string; line: number }> = [];
     const usages = new Set<string>();
 
@@ -318,6 +329,7 @@ class DeadCodeDetector {
         if (exportMatch) exports.push({ name: exportMatch[1], file: f, line: i + 1 });
       }
     }
+    debug('Found %d exports to check for usage', exports.length);
 
     // Check usages across all files
     for (const f of files) {
@@ -329,16 +341,18 @@ class DeadCodeDetector {
     }
 
     // Find unused exports
-    return exports
+    const dead = exports
       .filter(e => !usages.has(e.name))
       .map(e => ({ file: e.file, name: e.name, line: e.line, type: 'unused-export' }));
+    debug('Dead code detection complete: %d unused exports found', dead.length);
+    return dead;
   }
 }
 
 const deadCodeDetector = new DeadCodeDetector();
 
 export const DeadCodeFeature: FeatureModule = {
-  meta: { id: 'dead-code', name: 'Dead Code Detector', description: 'Find unused exports and dead code paths', category: 'quality', enabled: true, priority: 'P2' },
+  meta: { id: 'dead-code', name: 'Dead Code Detector', description: 'Find unused exports and dead code paths', category: 'quality', enabled: true, priority: 'P2', maturity: 'beta' },
   getTools() {
     return [{
       name: 'detect_dead_code',
@@ -356,6 +370,7 @@ export const DeadCodeFeature: FeatureModule = {
 // ══════════════════════════════════════════════════════
 class BreakingChangePredictor {
   async predictImpact(filePath: string, changedFunctions: string[]): Promise<Array<{ consumer: string; line: number; affectedFunction: string }>> {
+    debug('Predicting impact of changes to %s: functions=%s', filePath, changedFunctions.join(', '));
     const allFiles = await getSourceFiles(process.cwd());
     const impacts: Array<{ consumer: string; line: number; affectedFunction: string }> = [];
 
@@ -379,7 +394,7 @@ class BreakingChangePredictor {
 const breakingPredictor = new BreakingChangePredictor();
 
 export const BreakingChangeFeature: FeatureModule = {
-  meta: { id: 'breaking-change', name: 'Breaking Change Predictor', description: 'Predict impact of function changes on consumers', category: 'quality', enabled: true, priority: 'P1' },
+  meta: { id: 'breaking-change', name: 'Breaking Change Predictor', description: 'Predict impact of function changes on consumers', category: 'quality', enabled: true, priority: 'P1', maturity: 'beta' },
   getTools() {
     return [{
       name: 'predict_breaking_changes',
@@ -397,6 +412,7 @@ export const BreakingChangeFeature: FeatureModule = {
 // ══════════════════════════════════════════════════════
 class SmartLintRunner {
   async runLinters(projectDir: string, filePath?: string): Promise<{ tool: string; issues: Array<{ file: string; line: number; message: string; severity: string }> }> {
+    debug('Running linters for %s', filePath || projectDir);
     const allIssues: Array<{ file: string; line: number; message: string; severity: string }> = [];
     let tool = 'none';
 
@@ -429,7 +445,7 @@ class SmartLintRunner {
 const lintRunner = new SmartLintRunner();
 
 export const SmartLintFeature: FeatureModule = {
-  meta: { id: 'smart-lint', name: 'Smart Lint Integration', description: 'Run linters and auto-fix issues before applying changes', category: 'quality', enabled: true, priority: 'P0' },
+  meta: { id: 'smart-lint', name: 'Smart Lint Integration', description: 'Run linters and auto-fix issues before applying changes', category: 'quality', enabled: true, priority: 'P0', maturity: 'stable' },
   getTools() {
     return [{
       name: 'run_smart_lint',
@@ -477,7 +493,7 @@ class MigrationGenerator {
 const migrationGen = new MigrationGenerator();
 
 export const MigrationGeneratorFeature: FeatureModule = {
-  meta: { id: 'migration-gen', name: 'Auto Migration Generator', description: 'Detect schema changes and generate DB migrations', category: 'quality', enabled: true, priority: 'P2' },
+  meta: { id: 'migration-gen', name: 'Auto Migration Generator', description: 'Detect schema changes and generate DB migrations', category: 'quality', enabled: true, priority: 'P2', maturity: 'experimental' },
   getTools() {
     return [{
       name: 'detect_schema_changes',

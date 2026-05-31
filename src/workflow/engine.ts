@@ -20,6 +20,32 @@ import {
   saveRunResult,
   loadRunResult,
 } from './script-runner';
+import {
+  WorkflowDefinition,
+  WorkflowStep,
+  WorkflowContext as DefWorkflowContext,
+  WorkflowResult,
+  WorkflowVariables,
+  WorkflowEvent,
+  WorkflowEventType,
+  WorkflowEventListener,
+  StepResult,
+  Condition,
+  ConditionExpression,
+  TemplateString,
+  RetryPolicy,
+  CommandStep,
+  ToolStep,
+  AgentStep,
+  ConditionStep,
+  LoopStep,
+  ParallelStep,
+  TryCatchStep,
+  SetVariableStep,
+  LogStep,
+  WorkflowRefStep,
+  VariableDefinition,
+} from './types';
 
 // ── Core types ─────────────────────────────────────────────────
 

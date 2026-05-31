@@ -1,26 +1,27 @@
-// ── Rate Limiter: Proactive request pacing ───────────
-// Prevents 429s by tracking requests per minute and enforcing
-// minimum intervals. After a 429, enters a cooldown period.
+// ── Rate Limiter: Configurable, transparent pass-through ────
+// Default mode: light throttling with retries. Requests go
+// straight to the API. If the proxy returns 429, the limiter
+// backs off and retries up to maxRetries times.
+//
+// Call updateConfig() at runtime to change behaviour without
+// recreating the singleton.
 
 export interface RateLimiterConfig {
-  /** Maximum requests per minute (default: 30 for standard plans) */
   requestsPerMinute: number;
-  /** Minimum interval between requests in ms (default: 1000) */
   minIntervalMs: number;
-  /** Initial cooldown after a 429 in ms (default: 5000) */
   cooldownBaseMs: number;
-  /** Max cooldown in ms (default: 60000) */
   cooldownMaxMs: number;
-  /** Cooldown multiplier on repeated 429s (default: 2) */
   cooldownMultiplier: number;
+  maxRetries: number;
 }
 
 const DEFAULT_CONFIG: RateLimiterConfig = {
-  requestsPerMinute: 30,
-  minIntervalMs: 1000,
-  cooldownBaseMs: 5000,
-  cooldownMaxMs: 60000,
-  cooldownMultiplier: 2,
+  requestsPerMinute: 60,      // 60 RPM — standard API tier
+  minIntervalMs: 0,           // no artificial delay between requests
+  cooldownBaseMs: 5000,       // 429 -> wait 5s (was 30s)
+  cooldownMaxMs: 30000,       // max wait 30s (was 60s)
+  cooldownMultiplier: 2,      // 5s -> 10s -> 20s -> 30s
+  maxRetries: 5,              // retry up to 5 times on 429 (was 3)
 };
 
 export class RateLimiter {
@@ -31,19 +32,87 @@ export class RateLimiter {
   private cooldownLevel: number = 0;
   private totalWaits: number = 0;
   private totalWaitMs: number = 0;
+  private totalRetries: number = 0;
+  private totalRequests: number = 0;
+  private total429s: number = 0;
+
+  private queueChain: Promise<void> = Promise.resolve();
 
   constructor(config: Partial<RateLimiterConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
   }
 
+  // ── Runtime configuration ─────────────────────────────────
+
   /**
-   * Call this BEFORE making an API request.
-   * Resolves when it's safe to proceed.
+   * Apply partial configuration changes at runtime.
+   * Merges the provided patch into the current config.
+   * @example limiter.updateConfig({ minIntervalMs: 5000, maxRetries: 5 });
    */
+  updateConfig(patch: Partial<RateLimiterConfig>): void {
+    this.config = { ...this.config, ...patch };
+  }
+
+  /**
+   * Return a shallow copy of the current configuration.
+   * Safe for logging / diffing without mutating internal state.
+   */
+  getConfig(): RateLimiterConfig {
+    return { ...this.config };
+  }
+
+  // ── Core enqueue / wait logic ─────────────────────────────
+
+  async enqueue<T>(
+    fn: () => Promise<T>,
+    options?: { onRetry?: (attempt: number, delayMs: number) => void }
+  ): Promise<T> {
+    let lastError: any = null;
+
+    for (let attempt = 0; attempt <= this.config.maxRetries; attempt++) {
+      await this.wait();
+      this.totalRequests++;
+
+      try {
+        const result = await fn();
+        this.onSuccess();
+        return result;
+      } catch (err: any) {
+        lastError = err;
+
+        if (err.__noRetry || !this.is429(err)) {
+          throw err;
+        }
+
+        this.total429s++;
+
+        const retryAfterSec = this.extractRetryAfter(err);
+        this.backoff(retryAfterSec && retryAfterSec > 0 ? retryAfterSec : undefined);
+
+        if (attempt < this.config.maxRetries) {
+          const waitMs = Math.max(0, this.cooldownUntil - Date.now());
+          const waitSec = Math.round(waitMs / 1000);
+          options?.onRetry?.(attempt + 1, waitMs);
+          // Show wait message if caller didn't provide onRetry
+          if (!options?.onRetry) {
+            process.stderr.write(`\r\x1b[K  ⏳ rate limited, waiting ${waitSec}s... (retry ${attempt + 1}/${this.config.maxRetries})\r`);
+          }
+        }
+      }
+    }
+
+    throw lastError;
+  }
+
   async wait(): Promise<void> {
+    const myTurn = this.queueChain.then(() => this.doWait());
+    this.queueChain = myTurn.catch(() => {});
+    await myTurn;
+  }
+
+  private async doWait(): Promise<void> {
     const now = Date.now();
 
-    // 1. Respect cooldown from previous 429
     if (now < this.cooldownUntil) {
       const waitMs = this.cooldownUntil - now;
       this.totalWaits++;
@@ -51,69 +120,56 @@ export class RateLimiter {
       await this.sleep(waitMs);
     }
 
-    // 2. Enforce minimum interval between requests
-    const sinceLastRequest = Date.now() - this.lastRequestTime;
-    if (sinceLastRequest < this.config.minIntervalMs) {
-      const waitMs = this.config.minIntervalMs - sinceLastRequest;
-      this.totalWaits++;
-      this.totalWaitMs += waitMs;
-      await this.sleep(waitMs);
-    }
-
-    // 3. Sliding window: ensure we don't exceed requestsPerMinute
-    this.trimOldTimestamps();
-    if (this.requestTimestamps.length >= this.config.requestsPerMinute) {
-      const oldestInWindow = this.requestTimestamps[0];
-      const waitMs = oldestInWindow + 60_000 - Date.now() + 500; // +500ms buffer
-      if (waitMs > 0) {
+    if (this.config.minIntervalMs > 0) {
+      const sinceLastRequest = Date.now() - this.lastRequestTime;
+      if (sinceLastRequest < this.config.minIntervalMs) {
+        const waitMs = this.config.minIntervalMs - sinceLastRequest;
         this.totalWaits++;
         this.totalWaitMs += waitMs;
         await this.sleep(waitMs);
       }
     }
 
-    // Record this request
+    if (this.config.requestsPerMinute < 9999) {
+      this.trimOldTimestamps();
+      if (this.requestTimestamps.length >= this.config.requestsPerMinute) {
+        const oldestInWindow = this.requestTimestamps[0];
+        const waitMs = oldestInWindow + 60_000 - Date.now() + 500;
+        if (waitMs > 0) {
+          this.totalWaits++;
+          this.totalWaitMs += waitMs;
+          await this.sleep(waitMs);
+        }
+      }
+    }
+
     this.lastRequestTime = Date.now();
     this.requestTimestamps.push(this.lastRequestTime);
   }
 
-  /**
-   * Call this when a 429 is received.
-   * Enters cooldown mode. If `retryAfterSeconds` is provided from
-   * the Retry-After header, uses that; otherwise escalates exponentially.
-   */
   backoff(retryAfterSeconds?: number): void {
-    const now = Date.now();
     this.cooldownLevel++;
-
     let cooldownMs: number;
     if (retryAfterSeconds && retryAfterSeconds > 0) {
-      // Use server-specified wait time + buffer
       cooldownMs = retryAfterSeconds * 1000 + 1000;
     } else {
-      // Exponential escalation
       cooldownMs = Math.min(
         this.config.cooldownBaseMs * Math.pow(this.config.cooldownMultiplier, this.cooldownLevel - 1),
         this.config.cooldownMaxMs
       );
     }
-
-    this.cooldownUntil = now + cooldownMs;
+    this.cooldownUntil = Date.now() + cooldownMs;
   }
 
-  /**
-   * Call this on a successful (non-429) response.
-   * Gradually reduces cooldown level.
-   */
   onSuccess(): void {
     if (this.cooldownLevel > 0) {
       this.cooldownLevel = Math.max(0, this.cooldownLevel - 1);
     }
+    if (this.cooldownLevel === 0) {
+      this.cooldownUntil = 0;
+    }
   }
 
-  /**
-   * Get current stats for display.
-   */
   getStats(): {
     requestsInWindow: number;
     cooldownActive: boolean;
@@ -121,6 +177,10 @@ export class RateLimiter {
     totalWaits: number;
     totalWaitMs: number;
     cooldownLevel: number;
+    totalRetries: number;
+    totalRequests: number;
+    total429s: number;
+    successRate: number;
   } {
     this.trimOldTimestamps();
     const now = Date.now();
@@ -131,14 +191,29 @@ export class RateLimiter {
       totalWaits: this.totalWaits,
       totalWaitMs: this.totalWaitMs,
       cooldownLevel: this.cooldownLevel,
+      totalRetries: this.totalRetries,
+      totalRequests: this.totalRequests,
+      total429s: this.total429s,
+      successRate: this.totalRequests > 0
+        ? Math.round(((this.totalRequests - this.total429s) / this.totalRequests) * 100)
+        : 100,
     };
   }
 
-  /**
-   * Get current rate limit config for display.
-   */
-  getConfig(): RateLimiterConfig {
-    return { ...this.config };
+  // ── Private helpers ───────────────────────────────────────
+
+  private is429(err: any): boolean {
+    const status = err?.status || err?.statusCode || err?.error?.status;
+    return status === 429;
+  }
+
+  private extractRetryAfter(err: any): number | undefined {
+    const retryAfter = err?.headers?.['retry-after'];
+    if (retryAfter) {
+      const sec = parseInt(retryAfter, 10);
+      return sec > 0 ? sec : undefined;
+    }
+    return undefined;
   }
 
   private trimOldTimestamps(): void {
@@ -151,4 +226,19 @@ export class RateLimiter {
   private sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
+}
+
+// ── Singleton ────────────────────────────────────────────
+
+let globalLimiter: RateLimiter | null = null;
+
+export function getGlobalRateLimiter(config?: Partial<RateLimiterConfig>): RateLimiter {
+  if (!globalLimiter) {
+    globalLimiter = new RateLimiter(config ?? DEFAULT_CONFIG);
+  }
+  return globalLimiter;
+}
+
+export function resetGlobalRateLimiter(): void {
+  globalLimiter = null;
 }

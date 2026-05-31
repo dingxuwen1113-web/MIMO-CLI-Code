@@ -85,7 +85,7 @@ MIMO CLI 内置 55 项创新功能，分为五大层级：
 
 ```bash
 # 克隆项目
-git clone <repo-url>
+git clone https://github.com/dingxuwen1113-web/MIMO-CLI-Code
 cd mimo-cli-code
 
 # 安装依赖

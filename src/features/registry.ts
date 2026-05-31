@@ -1,6 +1,9 @@
 // ── Feature Plugin Registry ─────────────────────────
 // Unified system for registering and managing all 55 innovation features
 
+import createDebug from 'debug';
+const debug = createDebug('mimo:features:registry');
+
 export type FeatureCategory =
   | 'perception'
   | 'quality'
@@ -12,6 +15,8 @@ export type FeatureCategory =
   | 'ai'
   | 'terminal';
 
+export type FeatureMaturity = 'stable' | 'beta' | 'experimental';
+
 export interface FeatureMeta {
   id: string;
   name: string;
@@ -19,6 +24,7 @@ export interface FeatureMeta {
   category: FeatureCategory;
   enabled: boolean;
   priority: 'P0' | 'P1' | 'P2' | 'P3';
+  maturity?: FeatureMaturity;
   dependencies?: string[];
 }
 
@@ -47,11 +53,15 @@ export class FeatureRegistry {
 
   async init(context: FeatureContext): Promise<void> {
     this.context = context;
+    debug('Initializing feature registry with %d features', this.features.size);
     for (const [id, feature] of this.features) {
       if (feature.meta.enabled && feature.init) {
         try {
+          debug('Initializing feature %s', id);
           await feature.init(context);
+          debug('Feature %s initialized successfully', id);
         } catch (err: any) {
+          debug('Feature %s init failed: %s', id, err.message);
           console.error(`Feature ${id} init failed: ${err.message}`);
         }
       }
@@ -59,10 +69,12 @@ export class FeatureRegistry {
   }
 
   register(feature: FeatureModule): void {
+    debug('Registering feature: %s (maturity=%s)', feature.meta.id, feature.meta.maturity || 'experimental');
     this.features.set(feature.meta.id, feature);
   }
 
   registerAll(features: FeatureModule[]): void {
+    debug('Registering %d features in bulk', features.length);
     for (const f of features) this.register(f);
   }
 
@@ -76,11 +88,18 @@ export class FeatureRegistry {
 
   setEnabled(id: string, enabled: boolean): void {
     const f = this.features.get(id);
-    if (f) f.meta.enabled = enabled;
+    if (f) {
+      debug('Feature %s %s', id, enabled ? 'enabled' : 'disabled');
+      f.meta.enabled = enabled;
+    }
   }
 
   listByCategory(category: FeatureCategory): FeatureModule[] {
     return Array.from(this.features.values()).filter(f => f.meta.category === category);
+  }
+
+  listByMaturity(maturity: FeatureMaturity): FeatureModule[] {
+    return Array.from(this.features.values()).filter(f => (f.meta.maturity || 'experimental') === maturity);
   }
 
   getAll(): FeatureModule[] {
@@ -98,6 +117,7 @@ export class FeatureRegistry {
         tools.push(...f.getTools());
       }
     }
+    debug('Collected %d tools from enabled features', tools.length);
     return tools;
   }
 
@@ -108,12 +128,14 @@ export class FeatureRegistry {
         cmds.push(...f.getCommands());
       }
     }
+    debug('Collected %d commands from enabled features', cmds.length);
     return cmds;
   }
 
   async emitEvent(event: string, data: any): Promise<void> {
     const listeners = this.eventListeners.get(event);
     if (!listeners) return;
+    debug('Emitting event %s to %d listeners', event, listeners.size);
     for (const id of listeners) {
       const f = this.features.get(id);
       if (f?.meta.enabled && f.onEvent) {
@@ -129,6 +151,7 @@ export class FeatureRegistry {
       if (!this.eventListeners.has(event)) this.eventListeners.set(event, new Set());
       this.eventListeners.get(event)!.add(featureId);
     }
+    debug('Feature %s subscribed to events: %s', featureId, events.join(', '));
   }
 
   getStatusSummary(): Record<string, { enabled: boolean; status?: Record<string, any> }> {
@@ -143,6 +166,7 @@ export class FeatureRegistry {
   }
 
   async cleanup(): Promise<void> {
+    debug('Cleaning up %d features', this.features.size);
     for (const f of this.features.values()) {
       if (f.cleanup) {
         try { await f.cleanup(); } catch { /* ignore */ }

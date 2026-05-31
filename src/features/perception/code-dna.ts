@@ -2,6 +2,8 @@
 import { FeatureModule, FeatureContext } from '../registry';
 import { getSourceFiles, readFileSafe } from '../utils';
 import * as path from 'path';
+import createDebug from 'debug';
+const debug = createDebug('mimo:features:code-dna');
 
 interface ProjectDNA {
   namingStyle: 'camelCase' | 'snake_case' | 'PascalCase' | 'mixed';
@@ -18,15 +20,34 @@ interface ProjectDNA {
   patterns: string[];
 }
 
+function detectPatterns(content: string): string[] {
+  const patterns: string[] = [];
+  if (/class\s+\w+[\s\S]*private\s+static\s+instance/.test(content)) patterns.push('Singleton');
+  if (/new\s+\w+\([^)]*\)\s*;?\s*$/gm.test(content) && /class\s+\w+/.test(content)) patterns.push('Factory');
+  if (/\.on\(|\.emit\(|EventEmitter|addEventListener/.test(content)) patterns.push('EventEmitter');
+  if (/app\.use\(|middleware|next\(\)/.test(content)) patterns.push('Middleware chain');
+  if (/interface\s+\w+[\s\S]*implements\s+/.test(content)) patterns.push('Interface-based polymorphism');
+  if (/extends\s+\w+/.test(content) && /super\(/.test(content)) patterns.push('Class inheritance');
+  if (/async\s+\w+[\s\S]*await\s+/.test(content)) patterns.push('Async/await');
+  if (/\.map\(|\.filter\(|\.reduce\(|\.forEach\(/.test(content)) patterns.push('Functional iteration');
+  if (/export\s+(?:default\s+)?(?:function|class|const)\s+/.test(content)) patterns.push('Module exports');
+  if (/new\s+Promise|\.then\(|\.catch\(/.test(content)) patterns.push('Promise-based');
+  if (/try\s*\{[\s\S]*catch\s*\(/.test(content)) patterns.push('Try-catch error handling');
+  if (/Result<|\.unwrap\(\)|Either</.test(content)) patterns.push('Result-type error handling');
+  return [...new Set(patterns)];
+}
+
 class CodeDNAnalyzer {
   private dna: ProjectDNA | null = null;
   private analyzed = false;
 
   async analyze(projectDir: string): Promise<ProjectDNA> {
     if (this.dna && this.analyzed) return this.dna;
+    debug('Starting code DNA analysis for %s', projectDir);
 
     const files = await getSourceFiles(projectDir);
     const samples = files.slice(0, 50);
+    debug('Found %d source files, sampling %d', files.length, samples.length);
 
     let camelCount = 0, snakeCount = 0, pascalCount = 0;
     let tabCount = 0, spaceCount = 0, indentSizes: number[] = [];
@@ -36,6 +57,9 @@ class CodeDNAnalyzer {
     let totalLines = 0, totalCodeLines = 0, totalCommentLines = 0;
     let lineLengths: number[] = [];
     let funcLengths: number[] = [];
+    let totalNamedImports = 0, totalDefaultImports = 0, totalRequireImports = 0;
+    let totalAnyUsage = 0, totalTsIgnore = 0;
+    const allPatterns = new Set<string>();
 
     for (const filePath of samples) {
       const content = await readFileSafe(filePath);
@@ -85,9 +109,43 @@ class CodeDNAnalyzer {
         if (trimmed.includes('Result<') || trimmed.includes('.unwrap()')) resultType++;
       }
 
-      // Function length detection
-      const funcMatches = content.match(/(?:function|const\s+\w+\s*=\s*(?:async\s*)?\(|(?:async\s+)?(?:\w+\s*)?\w+\s*\([^)]*\)\s*(?::\s*\w+)?\s*\{)/g) || [];
-      funcLengths.push(...funcMatches.map(() => 0)); // simplified
+      // Function length detection — count brace depth to find function boundaries
+      let namedImportCount = 0, defaultImportCount = 0, requireCount = 0;
+      let anyCount = 0, tsIgnoreCount = 0;
+      const lines2 = content.split('\n');
+      for (let fi = 0; fi < lines2.length; fi++) {
+        const l = lines2[fi];
+        // Import style
+        if (/^import\s+\{/.test(l)) namedImportCount++;
+        else if (/^import\s+\w+/.test(l) && !/^import\s+\{/.test(l) && !/^import\s+\*/.test(l)) defaultImportCount++;
+        if (/require\s*\(/.test(l)) requireCount++;
+        // Type strictness
+        if (/:\s*any\b/.test(l) || /<any>/.test(l) || /as\s+any\b/.test(l)) anyCount++;
+        if (/@ts-ignore|@ts-expect-error|@ts-nocheck/.test(l)) tsIgnoreCount++;
+
+        // Function body length measurement
+        const funcStartMatch = l.match(/(?:function\s+\w+|(?:const|let|var)\s+\w+\s*=\s*(?:async\s*)?\(|(?:async\s+)?(?:\w+\s*)?\w+\s*\([^)]*\)\s*(?::\s*[\w<>\[\]|\s]+)?\s*\{)/);
+        if (funcStartMatch) {
+          let depth = 0;
+          let funcLen = 0;
+          for (let j = fi; j < lines2.length; j++) {
+            const fl = lines2[j];
+            for (const ch of fl) {
+              if (ch === '{') depth++;
+              if (ch === '}') depth--;
+            }
+            funcLen++;
+            if (depth === 0 && j > fi) break;
+          }
+          funcLengths.push(funcLen);
+        }
+      }
+      totalNamedImports += namedImportCount;
+      totalDefaultImports += defaultImportCount;
+      totalRequireImports += requireCount;
+      totalAnyUsage += anyCount;
+      totalTsIgnore += tsIgnoreCount;
+      for (const p of detectPatterns(content)) allPatterns.add(p);
     }
 
     this.dna = {
@@ -99,20 +157,26 @@ class CodeDNAnalyzer {
       quoteStyle: singleQ > doubleQ * 1.5 ? 'single' : doubleQ > singleQ * 1.5 ? 'double' : 'mixed',
       semicolons: semicolons > noSemicolons,
       errorHandling: resultType > tryCatch * 2 ? 'result-type' : tryCatch > resultType * 2 ? 'try-catch' : 'mixed',
-      importStyle: 'mixed',
+      importStyle: totalRequireImports > totalNamedImports && totalRequireImports > totalDefaultImports ? 'default'
+        : totalNamedImports > totalDefaultImports * 2 ? 'named'
+        : totalDefaultImports > totalNamedImports * 2 ? 'default' : 'mixed',
       averageLineLength: lineLengths.length > 0 ? Math.round(lineLengths.reduce((a, b) => a + b, 0) / lineLengths.length) : 80,
-      maxFunctionLength: 50,
+      maxFunctionLength: funcLengths.length > 0 ? Math.max(...funcLengths) : 0,
       commentDensity: totalLines > 0 ? Math.round((totalCommentLines / totalLines) * 100) : 0,
-      typeStrictness: 'strict',
-      patterns: [],
+      typeStrictness: totalAnyUsage + totalTsIgnore > totalCodeLines * 0.05 ? 'loose'
+        : totalAnyUsage + totalTsIgnore > totalCodeLines * 0.01 ? 'moderate' : 'strict',
+      patterns: [...allPatterns],
     };
 
     this.analyzed = true;
+    debug('Code DNA analysis complete: %s style, %s quotes, %s semicolons, %d patterns detected',
+      this.dna.namingStyle, this.dna.quoteStyle, this.dna.semicolons ? 'yes' : 'no', this.dna.patterns.length);
     return this.dna;
   }
 
   checkConsistency(code: string): Array<{ line: number; issue: string; suggestion: string }> {
     if (!this.dna) return [];
+    debug('Checking code consistency against project DNA');
     const issues: Array<{ line: number; issue: string; suggestion: string }> = [];
     const lines = code.split('\n');
 
@@ -156,8 +220,12 @@ export const CodePatternDNAFeature: FeatureModule = {
     category: 'perception',
     enabled: true,
     priority: 'P0',
+    maturity: 'stable',
   },
-  async init(ctx: FeatureContext) { await analyzer.analyze(ctx.projectDir); },
+  async init(ctx: FeatureContext) {
+    debug('Initializing Code Pattern DNA feature');
+    await analyzer.analyze(ctx.projectDir);
+  },
   getTools() {
     return [
       {
@@ -168,6 +236,7 @@ export const CodePatternDNAFeature: FeatureModule = {
           input_schema: { type: 'object' as const, properties: {} },
         },
         execute: async () => {
+          debug('Tool: analyze_dna called');
           const dna = analyzer.getDNA();
           return { output: dna ? JSON.stringify(dna, null, 2) : '(not analyzed)', isError: false };
         },
@@ -180,11 +249,13 @@ export const CodePatternDNAFeature: FeatureModule = {
           input_schema: { type: 'object' as const, properties: { code: { type: 'string', description: 'Code to check' } }, required: ['code'] },
         },
         execute: async (input: any) => {
+          debug('Tool: check_code_consistency called with %d chars', input.code?.length || 0);
           const issues = analyzer.checkConsistency(input.code);
+          debug('Found %d consistency issues', issues.length);
           return {
             output: issues.length > 0
               ? issues.map(i => `L${i.line}: ${i.issue} → ${i.suggestion}`).join('\n')
-              : '代码符合项目规范 ✓',
+              : 'Code follows project conventions',
             isError: false,
           };
         },
