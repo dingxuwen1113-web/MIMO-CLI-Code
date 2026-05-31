@@ -1,9 +1,10 @@
-// ── Rate Limiter: Transparent pass-through ───────────────────
-// Default mode: NO throttling, NO retries. Requests go straight
-// to the API. If the proxy returns 429, the error propagates
-// immediately so the user sees the real problem.
+// ── Rate Limiter: Configurable, transparent pass-through ────
+// Default mode: light throttling with retries. Requests go
+// straight to the API. If the proxy returns 429, the limiter
+// backs off and retries up to maxRetries times.
 //
-// To enable retries, pass config with maxRetries > 0.
+// Call updateConfig() at runtime to change behaviour without
+// recreating the singleton.
 
 export interface RateLimiterConfig {
   requestsPerMinute: number;
@@ -15,12 +16,12 @@ export interface RateLimiterConfig {
 }
 
 const DEFAULT_CONFIG: RateLimiterConfig = {
-  requestsPerMinute: 9999,
-  minIntervalMs: 30000,      // 30s between requests (MiFE ~1 RPM limit)
-  cooldownBaseMs: 30000,     // 429 → wait 30s
-  cooldownMaxMs: 60000,      // max wait 60s
-  cooldownMultiplier: 2,     // 30s → 60s → 60s
-  maxRetries: 3,             // retry up to 3 times on 429
+  requestsPerMinute: 10,      // 10 RPM (less aggressive than before)
+  minIntervalMs: 2000,        // 2s between requests (was 30s)
+  cooldownBaseMs: 30000,      // 429 -> wait 30s
+  cooldownMaxMs: 60000,       // max wait 60s
+  cooldownMultiplier: 2,      // 30s -> 60s -> 60s
+  maxRetries: 3,              // retry up to 3 times on 429
 };
 
 export class RateLimiter {
@@ -40,6 +41,27 @@ export class RateLimiter {
   constructor(config: Partial<RateLimiterConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
   }
+
+  // ── Runtime configuration ─────────────────────────────────
+
+  /**
+   * Apply partial configuration changes at runtime.
+   * Merges the provided patch into the current config.
+   * @example limiter.updateConfig({ minIntervalMs: 5000, maxRetries: 5 });
+   */
+  updateConfig(patch: Partial<RateLimiterConfig>): void {
+    this.config = { ...this.config, ...patch };
+  }
+
+  /**
+   * Return a shallow copy of the current configuration.
+   * Safe for logging / diffing without mutating internal state.
+   */
+  getConfig(): RateLimiterConfig {
+    return { ...this.config };
+  }
+
+  // ── Core enqueue / wait logic ─────────────────────────────
 
   async enqueue<T>(
     fn: () => Promise<T>,
@@ -178,9 +200,7 @@ export class RateLimiter {
     };
   }
 
-  getConfig(): RateLimiterConfig {
-    return { ...this.config };
-  }
+  // ── Private helpers ───────────────────────────────────────
 
   private is429(err: any): boolean {
     const status = err?.status || err?.statusCode || err?.error?.status;
@@ -208,7 +228,7 @@ export class RateLimiter {
   }
 }
 
-// ── Singleton ────────────────────────────────────────────────
+// ── Singleton ────────────────────────────────────────────
 
 let globalLimiter: RateLimiter | null = null;
 

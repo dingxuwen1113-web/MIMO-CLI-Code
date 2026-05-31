@@ -1,7 +1,7 @@
 // ── Feature System Barrel Export ──────────────────────
 // Central registration of all 55 innovation features
 
-export { FeatureRegistry, FeatureModule, FeatureContext, FeatureMeta, FeatureCategory } from './registry';
+export { FeatureRegistry, FeatureModule, FeatureContext, FeatureMeta, FeatureCategory, FeatureMaturity } from './registry';
 export { estimateTokens, readFileSafe, getSourceFiles, runCommand, countLines, debounce, deepMerge, now_iso, now_date, fileHash, safeJsonParse } from './utils';
 
 // Perception Layer (Features 1-7)

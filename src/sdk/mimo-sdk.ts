@@ -289,7 +289,7 @@ export class MimoSDK {
   }
 
   /** Change the agent mode at runtime. */
-  setMode(mode: 'plan' | 'agent' | 'yolo'): void {
+  setMode(mode: 'plan' | 'agent' | 'custom' | 'yolo'): void {
     this.config.mode = mode;
     if (this.mimoConfig) {
       this.mimoConfig.agent.mode = mode as AgentMode;

@@ -1,0 +1,1062 @@
+# ════════════════════════════════════════════════════════════════════════════════
+# MIMO CLI Code v2.0 - External Permission Configuration
+# ════════════════════════════════════════════════════════════════════════════════
+#
+# This file defines the permission matrix for all built-in tools across
+# the four operational modes. Editing this file customizes tool access
+# without modifying source code.
+#
+# Modes (least to most permissive):
+#   plan   - Read-only. No mutations allowed.
+#   agent  - Write operations require user approval.
+#   custom - Configurable middle ground between agent and yolo.
+#   yolo   - Fully autonomous. All operations execute without approval.
+#
+# Permission values:
+#   auto   - Execute automatically without asking the user.
+#   ask    - Prompt the user for approval before executing.
+#   denied - Block execution entirely.
+#
+# Tool categories: file, shell, search, browser, web, git, task, notebook,
+#                  image, computer, review, safety, lsp, rlm, audit
+# ════════════════════════════════════════════════════════════════════════════════
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Tool Permission Matrix
+# ──────────────────────────────────────────────────────────────────────────────
+#
+# Each [[tool_permissions]] entry sets the permission for one tool in one mode.
+# Unlisted tool/mode combinations fall back to the hardcoded defaults in mode.ts.
+#
+# Format:
+#   [[tool_permissions]]
+#   name  = "tool_name"     # Tool identifier (e.g. "file_write")
+#   mode  = "agent"         # One of: plan, agent, custom, yolo
+#   value = "auto"          # One of: auto, ask, denied
+
+# ── File Tools ────────────────────────────────────────────────────────────────
+# file_read  - Read file contents (low risk)
+# file_write - Write/create files (high risk)
+# file_edit  - Edit existing files (high risk)
+
+[[tool_permissions]]
+name  = "file_read"
+mode  = "plan"
+value = "auto"
+
+[[tool_permissions]]
+name  = "file_read"
+mode  = "agent"
+value = "auto"
+
+[[tool_permissions]]
+name  = "file_read"
+mode  = "custom"
+value = "auto"
+
+[[tool_permissions]]
+name  = "file_read"
+mode  = "yolo"
+value = "auto"
+
+[[tool_permissions]]
+name  = "file_write"
+mode  = "plan"
+value = "denied"
+
+[[tool_permissions]]
+name  = "file_write"
+mode  = "agent"
+value = "ask"
+
+[[tool_permissions]]
+name  = "file_write"
+mode  = "custom"
+value = "auto"
+
+[[tool_permissions]]
+name  = "file_write"
+mode  = "yolo"
+value = "auto"
+
+[[tool_permissions]]
+name  = "file_edit"
+mode  = "plan"
+value = "denied"
+
+[[tool_permissions]]
+name  = "file_edit"
+mode  = "agent"
+value = "ask"
+
+[[tool_permissions]]
+name  = "file_edit"
+mode  = "custom"
+value = "auto"
+
+[[tool_permissions]]
+name  = "file_edit"
+mode  = "yolo"
+value = "auto"
+
+# ── Shell ─────────────────────────────────────────────────────────────────────
+# shell_exec - Execute shell commands (critical risk)
+
+[[tool_permissions]]
+name  = "shell_exec"
+mode  = "plan"
+value = "denied"
+
+[[tool_permissions]]
+name  = "shell_exec"
+mode  = "agent"
+value = "ask"
+
+[[tool_permissions]]
+name  = "shell_exec"
+mode  = "custom"
+value = "ask"
+
+[[tool_permissions]]
+name  = "shell_exec"
+mode  = "yolo"
+value = "auto"
+
+# ── Search Tools ──────────────────────────────────────────────────────────────
+# grep_search - Search file contents with regex (low risk)
+# glob_match  - Find files by glob pattern (low risk)
+
+[[tool_permissions]]
+name  = "grep_search"
+mode  = "plan"
+value = "auto"
+
+[[tool_permissions]]
+name  = "grep_search"
+mode  = "agent"
+value = "auto"
+
+[[tool_permissions]]
+name  = "grep_search"
+mode  = "custom"
+value = "auto"
+
+[[tool_permissions]]
+name  = "grep_search"
+mode  = "yolo"
+value = "auto"
+
+[[tool_permissions]]
+name  = "glob_match"
+mode  = "plan"
+value = "auto"
+
+[[tool_permissions]]
+name  = "glob_match"
+mode  = "agent"
+value = "auto"
+
+[[tool_permissions]]
+name  = "glob_match"
+mode  = "custom"
+value = "auto"
+
+[[tool_permissions]]
+name  = "glob_match"
+mode  = "yolo"
+value = "auto"
+
+# ── Browser (Read) ────────────────────────────────────────────────────────────
+# These tools only read browser state; no mutations.
+
+[[tool_permissions]]
+name  = "browser_navigate"
+mode  = "plan"
+value = "auto"
+
+[[tool_permissions]]
+name  = "browser_navigate"
+mode  = "agent"
+value = "auto"
+
+[[tool_permissions]]
+name  = "browser_navigate"
+mode  = "custom"
+value = "auto"
+
+[[tool_permissions]]
+name  = "browser_navigate"
+mode  = "yolo"
+value = "auto"
+
+[[tool_permissions]]
+name  = "browser_read"
+mode  = "plan"
+value = "auto"
+
+[[tool_permissions]]
+name  = "browser_read"
+mode  = "agent"
+value = "auto"
+
+[[tool_permissions]]
+name  = "browser_read"
+mode  = "custom"
+value = "auto"
+
+[[tool_permissions]]
+name  = "browser_read"
+mode  = "yolo"
+value = "auto"
+
+[[tool_permissions]]
+name  = "browser_find"
+mode  = "plan"
+value = "auto"
+
+[[tool_permissions]]
+name  = "browser_find"
+mode  = "agent"
+value = "auto"
+
+[[tool_permissions]]
+name  = "browser_find"
+mode  = "custom"
+value = "auto"
+
+[[tool_permissions]]
+name  = "browser_find"
+mode  = "yolo"
+value = "auto"
+
+[[tool_permissions]]
+name  = "browser_screenshot"
+mode  = "plan"
+value = "auto"
+
+[[tool_permissions]]
+name  = "browser_screenshot"
+mode  = "agent"
+value = "auto"
+
+[[tool_permissions]]
+name  = "browser_screenshot"
+mode  = "custom"
+value = "auto"
+
+[[tool_permissions]]
+name  = "browser_screenshot"
+mode  = "yolo"
+value = "auto"
+
+[[tool_permissions]]
+name  = "browser_network"
+mode  = "plan"
+value = "auto"
+
+[[tool_permissions]]
+name  = "browser_network"
+mode  = "agent"
+value = "auto"
+
+[[tool_permissions]]
+name  = "browser_network"
+mode  = "custom"
+value = "auto"
+
+[[tool_permissions]]
+name  = "browser_network"
+mode  = "yolo"
+value = "auto"
+
+[[tool_permissions]]
+name  = "browser_console"
+mode  = "plan"
+value = "auto"
+
+[[tool_permissions]]
+name  = "browser_console"
+mode  = "agent"
+value = "auto"
+
+[[tool_permissions]]
+name  = "browser_console"
+mode  = "custom"
+value = "auto"
+
+[[tool_permissions]]
+name  = "browser_console"
+mode  = "yolo"
+value = "auto"
+
+# ── Browser (Interactive) ─────────────────────────────────────────────────────
+# These tools interact with page elements; may trigger side effects.
+
+[[tool_permissions]]
+name  = "browser_click"
+mode  = "plan"
+value = "denied"
+
+[[tool_permissions]]
+name  = "browser_click"
+mode  = "agent"
+value = "ask"
+
+[[tool_permissions]]
+name  = "browser_click"
+mode  = "custom"
+value = "auto"
+
+[[tool_permissions]]
+name  = "browser_click"
+mode  = "yolo"
+value = "auto"
+
+[[tool_permissions]]
+name  = "browser_type"
+mode  = "plan"
+value = "denied"
+
+[[tool_permissions]]
+name  = "browser_type"
+mode  = "agent"
+value = "ask"
+
+[[tool_permissions]]
+name  = "browser_type"
+mode  = "custom"
+value = "auto"
+
+[[tool_permissions]]
+name  = "browser_type"
+mode  = "yolo"
+value = "auto"
+
+[[tool_permissions]]
+name  = "browser_execute_js"
+mode  = "plan"
+value = "denied"
+
+[[tool_permissions]]
+name  = "browser_execute_js"
+mode  = "agent"
+value = "ask"
+
+[[tool_permissions]]
+name  = "browser_execute_js"
+mode  = "custom"
+value = "ask"
+
+[[tool_permissions]]
+name  = "browser_execute_js"
+mode  = "yolo"
+value = "auto"
+
+# ── Web Tools ─────────────────────────────────────────────────────────────────
+# web_search - Search the web (low risk)
+# web_fetch  - Fetch content from URL (low risk)
+
+[[tool_permissions]]
+name  = "web_search"
+mode  = "plan"
+value = "auto"
+
+[[tool_permissions]]
+name  = "web_search"
+mode  = "agent"
+value = "auto"
+
+[[tool_permissions]]
+name  = "web_search"
+mode  = "custom"
+value = "auto"
+
+[[tool_permissions]]
+name  = "web_search"
+mode  = "yolo"
+value = "auto"
+
+[[tool_permissions]]
+name  = "web_fetch"
+mode  = "plan"
+value = "auto"
+
+[[tool_permissions]]
+name  = "web_fetch"
+mode  = "agent"
+value = "auto"
+
+[[tool_permissions]]
+name  = "web_fetch"
+mode  = "custom"
+value = "auto"
+
+[[tool_permissions]]
+name  = "web_fetch"
+mode  = "yolo"
+value = "auto"
+
+# ── Git (Read) ────────────────────────────────────────────────────────────────
+# These git commands only read repository state.
+
+[[tool_permissions]]
+name  = "git_status"
+mode  = "plan"
+value = "auto"
+
+[[tool_permissions]]
+name  = "git_status"
+mode  = "agent"
+value = "auto"
+
+[[tool_permissions]]
+name  = "git_status"
+mode  = "custom"
+value = "auto"
+
+[[tool_permissions]]
+name  = "git_status"
+mode  = "yolo"
+value = "auto"
+
+[[tool_permissions]]
+name  = "git_diff"
+mode  = "plan"
+value = "auto"
+
+[[tool_permissions]]
+name  = "git_diff"
+mode  = "agent"
+value = "auto"
+
+[[tool_permissions]]
+name  = "git_diff"
+mode  = "custom"
+value = "auto"
+
+[[tool_permissions]]
+name  = "git_diff"
+mode  = "yolo"
+value = "auto"
+
+[[tool_permissions]]
+name  = "git_log"
+mode  = "plan"
+value = "auto"
+
+[[tool_permissions]]
+name  = "git_log"
+mode  = "agent"
+value = "auto"
+
+[[tool_permissions]]
+name  = "git_log"
+mode  = "custom"
+value = "auto"
+
+[[tool_permissions]]
+name  = "git_log"
+mode  = "yolo"
+value = "auto"
+
+[[tool_permissions]]
+name  = "git_blame"
+mode  = "plan"
+value = "auto"
+
+[[tool_permissions]]
+name  = "git_blame"
+mode  = "agent"
+value = "auto"
+
+[[tool_permissions]]
+name  = "git_blame"
+mode  = "custom"
+value = "auto"
+
+[[tool_permissions]]
+name  = "git_blame"
+mode  = "yolo"
+value = "auto"
+
+# ── Git (Write) ───────────────────────────────────────────────────────────────
+# These git commands modify repository state. Sub-operations may be read-only
+# (e.g. git_branch list vs create); see input-aware overrides below.
+
+[[tool_permissions]]
+name  = "git_branch"
+mode  = "plan"
+value = "auto"
+
+[[tool_permissions]]
+name  = "git_branch"
+mode  = "agent"
+value = "auto"
+
+[[tool_permissions]]
+name  = "git_branch"
+mode  = "custom"
+value = "auto"
+
+[[tool_permissions]]
+name  = "git_branch"
+mode  = "yolo"
+value = "auto"
+
+[[tool_permissions]]
+name  = "git_commit"
+mode  = "plan"
+value = "denied"
+
+[[tool_permissions]]
+name  = "git_commit"
+mode  = "agent"
+value = "ask"
+
+[[tool_permissions]]
+name  = "git_commit"
+mode  = "custom"
+value = "ask"
+
+[[tool_permissions]]
+name  = "git_commit"
+mode  = "yolo"
+value = "auto"
+
+[[tool_permissions]]
+name  = "git_checkout"
+mode  = "plan"
+value = "auto"
+
+[[tool_permissions]]
+name  = "git_checkout"
+mode  = "agent"
+value = "auto"
+
+[[tool_permissions]]
+name  = "git_checkout"
+mode  = "custom"
+value = "auto"
+
+[[tool_permissions]]
+name  = "git_checkout"
+mode  = "yolo"
+value = "auto"
+
+[[tool_permissions]]
+name  = "git_stash"
+mode  = "plan"
+value = "auto"
+
+[[tool_permissions]]
+name  = "git_stash"
+mode  = "agent"
+value = "auto"
+
+[[tool_permissions]]
+name  = "git_stash"
+mode  = "custom"
+value = "auto"
+
+[[tool_permissions]]
+name  = "git_stash"
+mode  = "yolo"
+value = "auto"
+
+[[tool_permissions]]
+name  = "git_pr"
+mode  = "plan"
+value = "denied"
+
+[[tool_permissions]]
+name  = "git_pr"
+mode  = "agent"
+value = "ask"
+
+[[tool_permissions]]
+name  = "git_pr"
+mode  = "custom"
+value = "ask"
+
+[[tool_permissions]]
+name  = "git_pr"
+mode  = "yolo"
+value = "auto"
+
+[[tool_permissions]]
+name  = "git_issue"
+mode  = "plan"
+value = "denied"
+
+[[tool_permissions]]
+name  = "git_issue"
+mode  = "agent"
+value = "ask"
+
+[[tool_permissions]]
+name  = "git_issue"
+mode  = "custom"
+value = "ask"
+
+[[tool_permissions]]
+name  = "git_issue"
+mode  = "yolo"
+value = "auto"
+
+[[tool_permissions]]
+name  = "git_release"
+mode  = "plan"
+value = "denied"
+
+[[tool_permissions]]
+name  = "git_release"
+mode  = "agent"
+value = "ask"
+
+[[tool_permissions]]
+name  = "git_release"
+mode  = "custom"
+value = "ask"
+
+[[tool_permissions]]
+name  = "git_release"
+mode  = "yolo"
+value = "auto"
+
+# ── Task Tools ────────────────────────────────────────────────────────────────
+# Task management operations (low risk).
+
+[[tool_permissions]]
+name  = "task_create"
+mode  = "plan"
+value = "auto"
+
+[[tool_permissions]]
+name  = "task_create"
+mode  = "agent"
+value = "auto"
+
+[[tool_permissions]]
+name  = "task_create"
+mode  = "custom"
+value = "auto"
+
+[[tool_permissions]]
+name  = "task_create"
+mode  = "yolo"
+value = "auto"
+
+[[tool_permissions]]
+name  = "task_update"
+mode  = "plan"
+value = "auto"
+
+[[tool_permissions]]
+name  = "task_update"
+mode  = "agent"
+value = "auto"
+
+[[tool_permissions]]
+name  = "task_update"
+mode  = "custom"
+value = "auto"
+
+[[tool_permissions]]
+name  = "task_update"
+mode  = "yolo"
+value = "auto"
+
+[[tool_permissions]]
+name  = "task_list"
+mode  = "plan"
+value = "auto"
+
+[[tool_permissions]]
+name  = "task_list"
+mode  = "agent"
+value = "auto"
+
+[[tool_permissions]]
+name  = "task_list"
+mode  = "custom"
+value = "auto"
+
+[[tool_permissions]]
+name  = "task_list"
+mode  = "yolo"
+value = "auto"
+
+[[tool_permissions]]
+name  = "task_get"
+mode  = "plan"
+value = "auto"
+
+[[tool_permissions]]
+name  = "task_get"
+mode  = "agent"
+value = "auto"
+
+[[tool_permissions]]
+name  = "task_get"
+mode  = "custom"
+value = "auto"
+
+[[tool_permissions]]
+name  = "task_get"
+mode  = "yolo"
+value = "auto"
+
+# ── Notebook Tools ────────────────────────────────────────────────────────────
+# notebook_read - Read Jupyter notebook cells (low risk)
+# notebook_edit - Edit Jupyter notebook cells (medium risk)
+
+[[tool_permissions]]
+name  = "notebook_read"
+mode  = "plan"
+value = "auto"
+
+[[tool_permissions]]
+name  = "notebook_read"
+mode  = "agent"
+value = "auto"
+
+[[tool_permissions]]
+name  = "notebook_read"
+mode  = "custom"
+value = "auto"
+
+[[tool_permissions]]
+name  = "notebook_read"
+mode  = "yolo"
+value = "auto"
+
+[[tool_permissions]]
+name  = "notebook_edit"
+mode  = "plan"
+value = "denied"
+
+[[tool_permissions]]
+name  = "notebook_edit"
+mode  = "agent"
+value = "ask"
+
+[[tool_permissions]]
+name  = "notebook_edit"
+mode  = "custom"
+value = "auto"
+
+[[tool_permissions]]
+name  = "notebook_edit"
+mode  = "yolo"
+value = "auto"
+
+# ── Image / Upload Tools ─────────────────────────────────────────────────────
+# image_read  - Read/inspect image files (low risk)
+# file_upload - Upload files to external services (medium risk)
+
+[[tool_permissions]]
+name  = "image_read"
+mode  = "plan"
+value = "auto"
+
+[[tool_permissions]]
+name  = "image_read"
+mode  = "agent"
+value = "auto"
+
+[[tool_permissions]]
+name  = "image_read"
+mode  = "custom"
+value = "auto"
+
+[[tool_permissions]]
+name  = "image_read"
+mode  = "yolo"
+value = "auto"
+
+[[tool_permissions]]
+name  = "file_upload"
+mode  = "plan"
+value = "denied"
+
+[[tool_permissions]]
+name  = "file_upload"
+mode  = "agent"
+value = "ask"
+
+[[tool_permissions]]
+name  = "file_upload"
+mode  = "custom"
+value = "ask"
+
+[[tool_permissions]]
+name  = "file_upload"
+mode  = "yolo"
+value = "auto"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Directory-Based Permission Rules
+# ──────────────────────────────────────────────────────────────────────────────
+#
+# These rules override the base permission matrix when a tool's input contains
+# a file path matching the specified glob pattern. Rules are evaluated in order;
+# the first matching rule wins.
+#
+# Format:
+#   [[directory_rules]]
+#   tool      = "file_write"        # Tool name (supports * wildcards)
+#   pattern   = "src/**"            # Glob pattern to match file paths
+#   mode      = "agent"             # Mode this rule applies to
+#   permission = "auto"             # Override permission (auto|ask|denied)
+
+# Source code: writes auto-approved in agent and custom modes
+[[directory_rules]]
+tool      = "file_write"
+pattern   = "src/**"
+mode      = "agent"
+permission = "auto"
+
+[[directory_rules]]
+tool      = "file_write"
+pattern   = "src/**"
+mode      = "custom"
+permission = "auto"
+
+[[directory_rules]]
+tool      = "file_edit"
+pattern   = "src/**"
+mode      = "agent"
+permission = "auto"
+
+[[directory_rules]]
+tool      = "file_edit"
+pattern   = "src/**"
+mode      = "custom"
+permission = "auto"
+
+# Test files: always auto-approve writes
+[[directory_rules]]
+tool      = "file_write"
+pattern   = "tests/**"
+mode      = "agent"
+permission = "auto"
+
+[[directory_rules]]
+tool      = "file_edit"
+pattern   = "tests/**"
+mode      = "agent"
+permission = "auto"
+
+# Config files: require approval in all modes except yolo
+[[directory_rules]]
+tool      = "*"
+pattern   = "config/**"
+mode      = "agent"
+permission = "ask"
+
+[[directory_rules]]
+tool      = "*"
+pattern   = "config/**"
+mode      = "custom"
+permission = "ask"
+
+# Root-level config files (package.json, tsconfig.json, etc.): require approval
+[[directory_rules]]
+tool      = "file_write"
+pattern   = "package.json"
+mode      = "agent"
+permission = "ask"
+
+[[directory_rules]]
+tool      = "file_write"
+pattern   = "package.json"
+mode      = "custom"
+permission = "ask"
+
+[[directory_rules]]
+tool      = "file_write"
+pattern   = "tsconfig.json"
+mode      = "agent"
+permission = "ask"
+
+[[directory_rules]]
+tool      = "file_write"
+pattern   = "tsconfig.json"
+mode      = "custom"
+permission = "ask"
+
+# Dangerous paths: always denied in plan mode regardless of tool
+[[directory_rules]]
+tool      = "*"
+pattern   = ".env*"
+mode      = "plan"
+permission = "denied"
+
+[[directory_rules]]
+tool      = "*"
+pattern   = ".env*"
+mode      = "agent"
+permission = "denied"
+
+[[directory_rules]]
+tool      = "*"
+pattern   = ".env*"
+mode      = "custom"
+permission = "denied"
+
+# node_modules: block all writes
+[[directory_rules]]
+tool      = "file_write"
+pattern   = "node_modules/**"
+mode      = "yolo"
+permission = "denied"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Input-Aware Overrides
+# ──────────────────────────────────────────────────────────────────────────────
+#
+# Some tools have sub-operations with different risk levels. These overrides
+# refine permissions based on specific input parameters.
+#
+# Format:
+#   [[input_overrides]]
+#   tool       = "git_branch"           # Tool name
+#   field      = "action"               # Input field to check
+#   match      = ["create", "delete"]   # Values that trigger the override
+#   mode       = "agent"                # Mode this override applies to
+#   permission = "ask"                  # Override permission
+
+# git_branch: create/delete/switch = write, list/current = read
+[[input_overrides]]
+tool       = "git_branch"
+field      = "action"
+match      = ["create", "delete", "switch"]
+mode       = "agent"
+permission = "ask"
+
+[[input_overrides]]
+tool       = "git_branch"
+field      = "action"
+match      = ["create", "delete", "switch"]
+mode       = "custom"
+permission = "ask"
+
+# git_checkout: file restore = write, branch switch = read
+[[input_overrides]]
+tool       = "git_checkout"
+field      = "file"
+match      = ["__any__"]
+mode       = "agent"
+permission = "ask"
+
+[[input_overrides]]
+tool       = "git_checkout"
+field      = "file"
+match      = ["__any__"]
+mode       = "custom"
+permission = "ask"
+
+# git_stash: push/pop/drop = write, list/show = read
+[[input_overrides]]
+tool       = "git_stash"
+field      = "action"
+match      = ["push", "pop", "drop"]
+mode       = "agent"
+permission = "ask"
+
+[[input_overrides]]
+tool       = "git_stash"
+field      = "action"
+match      = ["push", "pop", "drop"]
+mode       = "custom"
+permission = "ask"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# MCP Tool Permissions
+# ──────────────────────────────────────────────────────────────────────────────
+#
+# External MCP tools (mcp__<server>__<tool>) are classified by name pattern.
+# These rules override the default read/write classification.
+#
+# Format:
+#   [[mcp_permissions]]
+#   pattern    = "mcp__*__read_*"    # Glob on full tool name
+#   mode       = "agent"             # Mode this rule applies to
+#   permission = "auto"              # Permission to grant
+
+# Read-like MCP tools: auto-approve in all modes
+[[mcp_permissions]]
+pattern    = "mcp__*__read*"
+mode       = "agent"
+permission = "auto"
+
+[[mcp_permissions]]
+pattern    = "mcp__*__get*"
+mode       = "agent"
+permission = "auto"
+
+[[mcp_permissions]]
+pattern    = "mcp__*__list*"
+mode       = "agent"
+permission = "auto"
+
+[[mcp_permissions]]
+pattern    = "mcp__*__search*"
+mode       = "agent"
+permission = "auto"
+
+[[mcp_permissions]]
+pattern    = "mcp__*__find*"
+mode       = "agent"
+permission = "auto"
+
+[[mcp_permissions]]
+pattern    = "mcp__*__query*"
+mode       = "agent"
+permission = "auto"
+
+# Write-like MCP tools: require approval in agent mode
+[[mcp_permissions]]
+pattern    = "mcp__*__create*"
+mode       = "agent"
+permission = "ask"
+
+[[mcp_permissions]]
+pattern    = "mcp__*__update*"
+mode       = "agent"
+permission = "ask"
+
+[[mcp_permissions]]
+pattern    = "mcp__*__delete*"
+mode       = "agent"
+permission = "ask"
+
+[[mcp_permissions]]
+pattern    = "mcp__*__write*"
+mode       = "agent"
+permission = "ask"
+
+[[mcp_permissions]]
+pattern    = "mcp__*__execute*"
+mode       = "agent"
+permission = "ask"
+
+# Dangerous MCP operations: always require approval (even in custom)
+[[mcp_permissions]]
+pattern    = "mcp__*__delete*"
+mode       = "custom"
+permission = "ask"
+
+[[mcp_permissions]]
+pattern    = "mcp__*__execute*"
+mode       = "custom"
+permission = "ask"
+
+[[mcp_permissions]]
+pattern    = "mcp__*__drop*"
+mode       = "custom"
+permission = "ask"

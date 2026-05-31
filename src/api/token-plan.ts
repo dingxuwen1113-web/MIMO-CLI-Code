@@ -1,8 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk';
-import * as https from 'https';
+import createDebug from 'debug';
 import { MimoConfig } from '../config/schema';
 import { ApiAdapter, BudgetInfo, UsageStats, StreamCallbacks } from './types';
 import { getGlobalRateLimiter } from './rate-limiter';
+
+const debug = createDebug('mimo:api');
 
 export class TokenPlanAdapter implements ApiAdapter {
   private client: Anthropic;
@@ -20,23 +22,19 @@ export class TokenPlanAdapter implements ApiAdapter {
 
   private cacheTimestamps: Map<string, number> = new Map();
   private cacheTtl: number;
-  private baseUrl: string;
-  private apiKey: string;
 
   constructor(config: MimoConfig) {
     this.config = config;
     this.monthlyBudget = config.api.tokenPlan.monthlyBudget;
     this.cacheTtl = (config.promptCaching.cacheTtl || 300) * 1000;
-    this.baseUrl = config.api.tokenPlan.baseUrl || '';
-    this.apiKey = config.api.tokenPlan.apiKey;
 
     const clientOpts: Record<string, any> = {
-      apiKey: this.apiKey,
+      apiKey: config.api.tokenPlan.apiKey,
       maxRetries: 0,
       timeout: 120_000,
     };
-    if (this.baseUrl) {
-      clientOpts.baseURL = this.baseUrl;
+    if (config.api.tokenPlan.baseUrl) {
+      clientOpts.baseURL = config.api.tokenPlan.baseUrl;
     }
     this.client = new Anthropic(clientOpts as any);
   }
@@ -77,20 +75,19 @@ export class TokenPlanAdapter implements ApiAdapter {
 
     const limiter = getGlobalRateLimiter();
     try {
-      // Use raw HTTP directly for non-streaming (avoids SDK streaming requirement)
       const response = await limiter.enqueue(
-        () => this.rawHttpRequest(createParams),
+        () => this.client.messages.create(createParams),
       );
       this.trackUsage(response.usage);
       return response;
     } catch (err: any) {
       // If pro model gets 429, auto-downgrade to mimo-v2.5 and retry
       if (err?.status === 429 && model === 'mimo-v2.5-pro') {
-        console.error('[DEBUG] mimo-v2.5-pro got 429, downgrading to mimo-v2.5...');
+        debug('mimo-v2.5-pro got 429, downgrading to mimo-v2.5');
         createParams.model = 'mimo-v2.5';
         try {
           const response = await limiter.enqueue(
-            () => this.rawHttpRequest(createParams),
+            () => this.client.messages.create(createParams),
           );
           this.trackUsage(response.usage);
           return response;
@@ -175,9 +172,9 @@ export class TokenPlanAdapter implements ApiAdapter {
       this.trackUsage(finalMessage.usage);
       return finalMessage;
     } catch (err: any) {
-      // If streaming gets 429, fall back to non-streaming chat() which has raw HTTP fallback
+      // If streaming gets 429, fall back to non-streaming chat() which has SDK retry logic
       if (err?.status === 429) {
-        console.error('[DEBUG] Streaming got 429, falling back to non-streaming (with auto model downgrade)...');
+        debug('Streaming got 429, falling back to non-streaming (with auto model downgrade)');
         return this.chat(messages, tools, systemPrompt, options);
       }
       throw this.wrapApiError(err);
@@ -250,56 +247,6 @@ export class TokenPlanAdapter implements ApiAdapter {
     }
   }
 
-  /**
-   * Raw HTTP request that bypasses the Anthropic SDK entirely.
-   * Mimics the exact curl format that works with the MiFE proxy.
-   */
-  private rawHttpRequest(params: any): Promise<Anthropic.Message> {
-    return new Promise((resolve, reject) => {
-      const url = new URL(this.baseUrl + '/v1/messages');
-      const body = JSON.stringify(params);
-
-      const reqOptions: https.RequestOptions = {
-        hostname: url.hostname,
-        port: url.port || 443,
-        path: url.pathname,
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': this.apiKey,
-          'anthropic-version': '2023-06-01',
-          'Content-Length': Buffer.byteLength(body),
-        },
-      };
-
-      const req = https.request(reqOptions, (res) => {
-        let data = '';
-        res.on('data', (chunk) => { data += chunk; });
-        res.on('end', () => {
-          if (res.statusCode === 200) {
-            try {
-              const parsed = JSON.parse(data);
-              console.error(`[DEBUG] Raw HTTP SUCCESS → ${res.statusCode}, model: ${parsed.model || 'unknown'}`);
-              resolve(parsed as Anthropic.Message);
-            } catch (e) {
-              reject(new Error(`Failed to parse response: ${data.slice(0, 200)}`));
-            }
-          } else {
-            console.error(`[DEBUG] Raw HTTP FAILED → ${res.statusCode}: ${data.slice(0, 200)}`);
-            const err = new Error(`${res.statusCode} ${data}`);
-            (err as any).status = res.statusCode;
-            (err as any).headers = res.headers;
-            reject(err);
-          }
-        });
-      });
-
-      req.on('error', reject);
-      req.write(body);
-      req.end();
-    });
-  }
-
   private trackUsage(usage: Anthropic.Usage): void {
     this.usage.inputTokens += usage.input_tokens;
     this.usage.outputTokens += usage.output_tokens;
@@ -319,8 +266,7 @@ export class TokenPlanAdapter implements ApiAdapter {
   private wrapApiError(err: any): Error {
     const status = err?.status || err?.statusCode || err?.error?.status;
     const message = err?.message || String(err);
-    const headers = err?.headers ? JSON.stringify(err.headers) : '(no headers)';
-    console.error(`[DEBUG] API error → status: ${status}, message: ${message.slice(0, 100)}, headers: ${headers}`);
+    debug('API error → status: %d, message: %s', status, message.slice(0, 100));
 
     if (status === 401 || message.includes('401')) {
       return new Error('Token Plan API key is invalid or expired. Run "mimo init" to reconfigure.');

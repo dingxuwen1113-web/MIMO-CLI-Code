@@ -22,6 +22,46 @@ export interface StreamCallbacks {
   onThinking?: (thinking: string) => void;
 }
 
+/**
+ * Supported provider identifiers.
+ * 'anthropic' covers both 'token-plan' and 'pay-as-you-go' modes.
+ */
+export type ProviderId = 'anthropic' | 'ollama' | 'openai-compatible';
+
+/**
+ * Configuration for the Ollama provider.
+ */
+export interface OllamaProviderConfig {
+  /** Base URL of the local Ollama instance. Default: http://localhost:11434 */
+  baseUrl: string;
+  /** Default model to use when none is specified. */
+  model: string;
+}
+
+/**
+ * Configuration for any OpenAI-compatible provider (vLLM, LM Studio, Together.ai, etc.).
+ */
+export interface OpenAICompatibleProviderConfig {
+  /** Base URL of the OpenAI-compatible API. */
+  baseUrl: string;
+  /** API key (may be omitted for local servers that don't require auth). */
+  apiKey: string;
+  /** Default model to use when none is specified. */
+  model: string;
+}
+
+/**
+ * Full provider configuration, embedded inside the API config.
+ */
+export interface ProviderConfig {
+  /** Which provider backend to use. Defaults to 'anthropic'. */
+  provider: ProviderId;
+  /** Ollama-specific settings (only used when provider === 'ollama'). */
+  ollama: OllamaProviderConfig;
+  /** OpenAI-compatible settings (only used when provider === 'openai-compatible'). */
+  openaiCompatible: OpenAICompatibleProviderConfig;
+}
+
 export interface ApiAdapter {
   chat(
     messages: Anthropic.MessageParam[],

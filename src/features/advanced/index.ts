@@ -3,6 +3,8 @@ import { FeatureModule, FeatureContext } from '../registry';
 import { readFileSafe, getSourceFiles, runCommand, estimateTokens, now_iso } from '../utils';
 import * as path from 'path';
 import * as fs from 'fs/promises';
+import createDebug from 'debug';
+const debug = createDebug('mimo:features:advanced');
 
 // ═══ Feature 35: Cost Predictor ══════════════════════
 class CostPredictor {
@@ -13,7 +15,9 @@ class CostPredictor {
 
   estimate(inputTokens: number, outputTokens: number, model: string): number {
     const p = this.pricing[model] || this.pricing['mimo-v2.5-pro'];
-    return (inputTokens / 1_000_000) * p.input + (outputTokens / 1_000_000) * p.output;
+    const cost = (inputTokens / 1_000_000) * p.input + (outputTokens / 1_000_000) * p.output;
+    debug('Cost estimate: %d input + %d output tokens for %s = $%s', inputTokens, outputTokens, model, cost.toFixed(6));
+    return cost;
   }
 
   estimateMessage(messages: Array<{ content: string }>, model: string, estimatedOutput = 2000): { inputTokens: number; estimatedCost: number } {
@@ -25,7 +29,7 @@ class CostPredictor {
 const costPredictor = new CostPredictor();
 
 export const CostPredictorFeature: FeatureModule = {
-  meta: { id: 'cost-predictor', name: 'Cost Predictor', description: 'Estimate token cost before executing operations', category: 'performance', enabled: true, priority: 'P0' },
+  meta: { id: 'cost-predictor', name: 'Cost Predictor', description: 'Estimate token cost before executing operations', category: 'performance', enabled: true, priority: 'P0', maturity: 'stable' },
   getTools() {
     return [{
       name: 'estimate_cost',
@@ -41,7 +45,7 @@ export const CostPredictorFeature: FeatureModule = {
 
 // ═══ Feature 36: Budget-Aware Task Splitting ═════════
 export const BudgetSplitterFeature: FeatureModule = {
-  meta: { id: 'budget-splitter', name: 'Budget-Aware Task Splitting', description: 'Auto-split large tasks within token budget', category: 'performance', enabled: true, priority: 'P1' },
+  meta: { id: 'budget-splitter', name: 'Budget-Aware Task Splitting', description: 'Auto-split large tasks within token budget', category: 'performance', enabled: true, priority: 'P1', maturity: 'beta' },
   getTools() {
     return [{
       name: 'split_task_by_budget',
@@ -64,7 +68,7 @@ export const BudgetSplitterFeature: FeatureModule = {
 
 // ═══ Feature 37: Parallel Diff Streaming ═════════════
 export const ParallelDiffFeature: FeatureModule = {
-  meta: { id: 'parallel-diff', name: 'Parallel Diff Streaming', description: 'Multi-file concurrent diff rendering', category: 'performance', enabled: true, priority: 'P1' },
+  meta: { id: 'parallel-diff', name: 'Parallel Diff Streaming', description: 'Multi-file concurrent diff rendering', category: 'performance', enabled: true, priority: 'P1', maturity: 'beta' },
   getTools() {
     return [{
       name: 'parallel_diff',
@@ -103,7 +107,7 @@ class CacheMonitor {
 const cacheMonitor = new CacheMonitor();
 
 export const CacheMonitorFeature: FeatureModule = {
-  meta: { id: 'cache-monitor', name: 'Cache Hit Rate Monitor', description: 'Prompt caching performance dashboard', category: 'performance', enabled: true, priority: 'P1' },
+  meta: { id: 'cache-monitor', name: 'Cache Hit Rate Monitor', description: 'Prompt caching performance dashboard', category: 'performance', enabled: true, priority: 'P1', maturity: 'experimental' },
   async onEvent(event: string, data: any) {
     if (event === 'api_response' && data.cacheTokens) cacheMonitor.record(data.cacheTokens > 0, data.cacheTokens);
   },
@@ -121,7 +125,7 @@ export const CacheMonitorFeature: FeatureModule = {
 
 // ═══ Feature 39: Intelligent Context Window ══════════
 export const SmartContextFeature: FeatureModule = {
-  meta: { id: 'smart-context', name: 'Intelligent Context Window', description: 'Dynamic context size based on task type', category: 'performance', enabled: true, priority: 'P0' },
+  meta: { id: 'smart-context', name: 'Intelligent Context Window', description: 'Dynamic context size based on task type', category: 'performance', enabled: true, priority: 'P0', maturity: 'stable' },
   getTools() {
     return [{
       name: 'analyze_context',
@@ -160,7 +164,7 @@ export const SmartContextFeature: FeatureModule = {
 
 // ═══ Feature 40: Batch Operation Optimizer ══════════
 export const BatchOptimizerFeature: FeatureModule = {
-  meta: { id: 'batch-optimizer', name: 'Batch Operation Optimizer', description: 'Merge similar file operations for efficiency', category: 'performance', enabled: true, priority: 'P1' },
+  meta: { id: 'batch-optimizer', name: 'Batch Operation Optimizer', description: 'Merge similar file operations for efficiency', category: 'performance', enabled: true, priority: 'P1', maturity: 'beta' },
   getTools() {
     return [{
       name: 'batch_file_ops',
@@ -206,12 +210,13 @@ export const BatchOptimizerFeature: FeatureModule = {
 
 // ═══ Feature 41: Real-time Threat Modeling ═══════════
 export const ThreatModelingFeature: FeatureModule = {
-  meta: { id: 'threat-modeling', name: 'Real-time Threat Modeling', description: 'STRIDE analysis on auth/crypto code changes', category: 'security', enabled: true, priority: 'P2' },
+  meta: { id: 'threat-modeling', name: 'Real-time Threat Modeling', description: 'STRIDE analysis on auth/crypto code changes', category: 'security', enabled: true, priority: 'P2', maturity: 'beta' },
   getTools() {
     return [{
       name: 'threat_model',
       definition: { name: 'threat_model', description: 'Analyze code for security threats using STRIDE model', input_schema: { type: 'object' as const, properties: { code: { type: 'string' }, file: { type: 'string' } }, required: ['code'] } },
       execute: async (input: any) => {
+        debug('Tool: threat_model called (%d chars of code)', input.code?.length || 0);
         const threats: string[] = [];
         const code = input.code;
         if (/auth|login|password|token/i.test(code)) threats.push('SPOOFING: Authentication-related code — verify identity validation');
@@ -227,7 +232,7 @@ export const ThreatModelingFeature: FeatureModule = {
 
 // ═══ Feature 42: Compliance Checker ══════════════════
 export const ComplianceCheckerFeature: FeatureModule = {
-  meta: { id: 'compliance-checker', name: 'Compliance Checker', description: 'GDPR/SOC2/HIPAA code scanning', category: 'security', enabled: true, priority: 'P3' },
+  meta: { id: 'compliance-checker', name: 'Compliance Checker', description: 'GDPR/SOC2/HIPAA code scanning', category: 'security', enabled: true, priority: 'P3', maturity: 'experimental' },
   getTools() {
     return [{
       name: 'check_compliance',
@@ -247,12 +252,13 @@ export const ComplianceCheckerFeature: FeatureModule = {
 
 // ═══ Feature 43: Secret Leak Prevention ══════════════
 export const SecretLeakFeature: FeatureModule = {
-  meta: { id: 'secret-leak', name: 'Secret Leak Prevention', description: 'Scan diffs/commits/PRs for secrets', category: 'security', enabled: true, priority: 'P0' },
+  meta: { id: 'secret-leak', name: 'Secret Leak Prevention', description: 'Scan diffs/commits/PRs for secrets', category: 'security', enabled: true, priority: 'P0', maturity: 'stable' },
   getTools() {
     return [{
       name: 'scan_secrets',
       definition: { name: 'scan_secrets', description: 'Scan code for hardcoded secrets and credentials', input_schema: { type: 'object' as const, properties: { code: { type: 'string' }, file: { type: 'string' } }, required: ['code'] } },
       execute: async (input: any) => {
+        debug('Tool: scan_secrets called (%d chars)', input.code?.length || 0);
         const findings: string[] = [];
         const patterns = [
           { pattern: /sk-ant-[\w-]{20,}/g, name: 'Anthropic API Key' },
@@ -275,7 +281,7 @@ export const SecretLeakFeature: FeatureModule = {
 
 // ═══ Feature 44: Sandbox Visualization ═══════════════
 export const SandboxVisualizationFeature: FeatureModule = {
-  meta: { id: 'sandbox-viz', name: 'Sandbox Visualization', description: 'Show command blast radius before execution', category: 'security', enabled: true, priority: 'P2' },
+  meta: { id: 'sandbox-viz', name: 'Sandbox Visualization', description: 'Show command blast radius before execution', category: 'security', enabled: true, priority: 'P2', maturity: 'beta' },
   getTools() {
     return [{
       name: 'visualize_command_impact',
@@ -379,7 +385,7 @@ function analyzeFromPersona(persona: string, topic: string, code?: string): Deba
 }
 
 export const MultiAgentDebateFeature: FeatureModule = {
-  meta: { id: 'agent-debate', name: 'Multi-Agent Debate', description: 'Multiple agents with different personas debate solutions', category: 'ai', enabled: true, priority: 'P2' },
+  meta: { id: 'agent-debate', name: 'Multi-Agent Debate', description: 'Multiple agents with different personas debate solutions', category: 'ai', enabled: true, priority: 'P2', maturity: 'experimental' },
   getTools() {
     return [{
       name: 'start_debate',
@@ -424,12 +430,13 @@ export const MultiAgentDebateFeature: FeatureModule = {
 
 // ═══ Feature 46: Change Propagation Analysis ═════════
 export const PropagationAnalysisFeature: FeatureModule = {
-  meta: { id: 'propagation', name: 'Change Propagation Analysis', description: 'Trace impact of function changes across codebase', category: 'ai', enabled: true, priority: 'P1' },
+  meta: { id: 'propagation', name: 'Change Propagation Analysis', description: 'Trace impact of function changes across codebase', category: 'ai', enabled: true, priority: 'P1', maturity: 'beta' },
   getTools() {
     return [{
       name: 'trace_propagation',
       definition: { name: 'trace_propagation', description: 'Trace how a change propagates through the call graph', input_schema: { type: 'object' as const, properties: { file: { type: 'string' }, function: { type: 'string' } }, required: ['file', 'function'] } },
       execute: async (input: any) => {
+        debug('Tool: trace_propagation for %s in %s', input.function, input.file);
         const files = await getSourceFiles(process.cwd());
         const callers: string[] = [];
         for (const f of files) {
@@ -443,16 +450,55 @@ export const PropagationAnalysisFeature: FeatureModule = {
 };
 
 // ═══ Feature 47: Adaptive Feedback Learning ══════════
+interface TaskOutcome {
+  taskType: string;
+  strategy: string;
+  success: boolean;
+  duration: number;
+  timestamp: string;
+}
+
 class AdaptiveLearner {
   private rejections: Array<{ action: string; reason: string; context: string; timestamp: string }> = [];
   private confirmations: Array<{ action: string; context: string; timestamp: string }> = [];
+  private taskOutcomes: TaskOutcome[] = [];
+  private strategyScores: Map<string, { wins: number; losses: number; totalDuration: number }> = new Map();
 
   recordRejection(action: string, reason: string, context: string) {
+    debug('Recording rejection: %s (reason: %s)', action.slice(0, 40), reason.slice(0, 40));
     this.rejections.push({ action, reason, context, timestamp: now_iso() });
   }
 
   recordConfirmation(action: string, context: string) {
+    debug('Recording confirmation: %s', action.slice(0, 40));
     this.confirmations.push({ action, context, timestamp: now_iso() });
+  }
+
+  recordTaskOutcome(taskType: string, strategy: string, success: boolean, duration: number) {
+    debug('Recording task outcome: type=%s strategy=%s success=%s duration=%dms', taskType, strategy, success, duration);
+    this.taskOutcomes.push({ taskType, strategy, success, duration, timestamp: now_iso() });
+
+    const key = `${taskType}:${strategy}`;
+    const existing = this.strategyScores.get(key) || { wins: 0, losses: 0, totalDuration: 0 };
+    if (success) existing.wins++; else existing.losses++;
+    existing.totalDuration += duration;
+    this.strategyScores.set(key, existing);
+  }
+
+  getBestStrategy(taskType: string): { strategy: string; winRate: number; avgDuration: number } | null {
+    let best: { strategy: string; winRate: number; avgDuration: number } | null = null;
+    for (const [key, score] of this.strategyScores) {
+      if (!key.startsWith(taskType + ':')) continue;
+      const strategy = key.slice(taskType.length + 1);
+      const total = score.wins + score.losses;
+      if (total < 2) continue;
+      const winRate = score.wins / total;
+      const avgDuration = score.totalDuration / total;
+      if (!best || winRate > best.winRate || (winRate === best.winRate && avgDuration < best.avgDuration)) {
+        best = { strategy, winRate, avgDuration };
+      }
+    }
+    return best;
   }
 
   getPatterns(): { avoid: string[]; prefer: string[] } {
@@ -473,31 +519,74 @@ class AdaptiveLearner {
       prefer: Object.entries(preferCounts).filter(([, v]) => v >= 2).map(([k]) => k),
     };
   }
+
+  getTaskInsights(): Array<{ taskType: string; bestStrategy: string; winRate: number; attempts: number }> {
+    const byType: Map<string, { wins: number; losses: number; bestStrategy: string; bestWinRate: number }> = new Map();
+    for (const [key, score] of this.strategyScores) {
+      const [taskType, strategy] = key.split(':');
+      const existing = byType.get(taskType) || { wins: 0, losses: 0, bestStrategy: '', bestWinRate: 0 };
+      existing.wins += score.wins;
+      existing.losses += score.losses;
+      const total = score.wins + score.losses;
+      const winRate = total > 0 ? score.wins / total : 0;
+      if (winRate > existing.bestWinRate && total >= 2) {
+        existing.bestStrategy = strategy;
+        existing.bestWinRate = winRate;
+      }
+      byType.set(taskType, existing);
+    }
+    return Array.from(byType.entries()).map(([taskType, data]) => ({
+      taskType,
+      bestStrategy: data.bestStrategy,
+      winRate: data.bestWinRate,
+      attempts: data.wins + data.losses,
+    }));
+  }
 }
 
 const learner = new AdaptiveLearner();
 
 export const AdaptiveLearningFeature: FeatureModule = {
-  meta: { id: 'adaptive-learning', name: 'Adaptive Feedback Learning', description: 'Deep preference learning from user feedback', category: 'ai', enabled: true, priority: 'P1' },
+  meta: { id: 'adaptive-learning', name: 'Adaptive Feedback Learning', description: 'Deep preference learning from user feedback with task-type strategy optimization', category: 'ai', enabled: true, priority: 'P1', maturity: 'beta' },
   async onEvent(event: string, data: any) {
     if (event === 'user_rejected') learner.recordRejection(data.action || '', data.reason || '', data.context || '');
     if (event === 'user_confirmed') learner.recordConfirmation(data.action || '', data.context || '');
+    if (event === 'task_completed') learner.recordTaskOutcome(data.taskType || 'unknown', data.strategy || 'default', !!data.success, data.duration || 0);
   },
   getTools() {
-    return [{
-      name: 'get_learned_patterns',
-      definition: { name: 'get_learned_patterns', description: 'View learned user preferences', input_schema: { type: 'object' as const, properties: {} } },
-      execute: async () => {
-        const patterns = learner.getPatterns();
-        return { output: `Avoid: ${patterns.avoid.join(', ') || '(none)'}\nPrefer: ${patterns.prefer.join(', ') || '(none)'}`, isError: false };
+    return [
+      {
+        name: 'get_learned_patterns',
+        definition: { name: 'get_learned_patterns', description: 'View learned user preferences', input_schema: { type: 'object' as const, properties: {} } },
+        execute: async () => {
+          debug('Tool: get_learned_patterns called');
+          const patterns = learner.getPatterns();
+          return { output: `Avoid: ${patterns.avoid.join(', ') || '(none)'}\nPrefer: ${patterns.prefer.join(', ') || '(none)'}`, isError: false };
+        },
       },
-    }];
+      {
+        name: 'get_best_strategy',
+        definition: { name: 'get_best_strategy', description: 'Get the best learned strategy for a task type', input_schema: { type: 'object' as const, properties: { taskType: { type: 'string', description: 'Task type (e.g., refactor, debug, feature)' } }, required: ['taskType'] } },
+        execute: async (input: any) => {
+          debug('Tool: get_best_strategy called for taskType=%s', input.taskType);
+          const best = learner.getBestStrategy(input.taskType);
+          const insights = learner.getTaskInsights();
+          if (best) {
+            return { output: `Best strategy for "${input.taskType}": ${best.strategy} (win rate: ${(best.winRate * 100).toFixed(0)}%, avg duration: ${best.avgDuration.toFixed(0)}ms)`, isError: false };
+          }
+          if (insights.length > 0) {
+            return { output: `No strategy data for "${input.taskType}" yet.\nKnown task types:\n${insights.map(i => `  ${i.taskType}: best="${i.bestStrategy}" (${i.attempts} attempts)`).join('\n')}`, isError: false };
+          }
+          return { output: `No learning data collected yet for "${input.taskType}". Strategies are learned from task outcomes over time.`, isError: false };
+        },
+      },
+    ];
   },
 };
 
 // ═══ Feature 48: Regression Test Generator ═══════════
 export const RegressionTestFeature: FeatureModule = {
-  meta: { id: 'regression-test', name: 'Regression Test Generator', description: 'Auto-generate tests for bug fixes', category: 'ai', enabled: true, priority: 'P1' },
+  meta: { id: 'regression-test', name: 'Regression Test Generator', description: 'Auto-generate tests for bug fixes', category: 'ai', enabled: true, priority: 'P1', maturity: 'beta' },
   getTools() {
     return [{
       name: 'generate_regression_test',
@@ -624,7 +713,7 @@ export const RegressionTestFeature: FeatureModule = {
 
 // ═══ Feature 49: Multi-Repo Awareness ════════════════
 export const MultiRepoFeature: FeatureModule = {
-  meta: { id: 'multi-repo', name: 'Multi-Repo Awareness', description: 'Cross-repo change detection in monorepos', category: 'ai', enabled: true, priority: 'P2' },
+  meta: { id: 'multi-repo', name: 'Multi-Repo Awareness', description: 'Cross-repo change detection in monorepos', category: 'ai', enabled: true, priority: 'P2', maturity: 'experimental' },
   getTools() {
     return [{
       name: 'detect_repos',
@@ -640,7 +729,7 @@ export const MultiRepoFeature: FeatureModule = {
 
 // ═══ Feature 50: ADR Auto-Generator ══════════════════
 export const ADRGeneratorFeature: FeatureModule = {
-  meta: { id: 'adr-generator', name: 'ADR Auto-Generator', description: 'Auto-create Architecture Decision Records', category: 'ai', enabled: true, priority: 'P2' },
+  meta: { id: 'adr-generator', name: 'ADR Auto-Generator', description: 'Auto-create Architecture Decision Records', category: 'ai', enabled: true, priority: 'P2', maturity: 'beta' },
   getTools() {
     return [{
       name: 'generate_adr',
@@ -659,7 +748,7 @@ export const ADRGeneratorFeature: FeatureModule = {
 
 // ═══ Feature 51: Streaming Diff Preview ══════════════
 export const StreamingDiffFeature: FeatureModule = {
-  meta: { id: 'streaming-diff', name: 'Streaming Diff Preview', description: 'Show diffs as AI generates code', category: 'terminal', enabled: true, priority: 'P0' },
+  meta: { id: 'streaming-diff', name: 'Streaming Diff Preview', description: 'Show diffs as AI generates code', category: 'terminal', enabled: true, priority: 'P0', maturity: 'stable' },
   getTools() {
     return [{
       name: 'render_diff',
@@ -715,7 +804,7 @@ export const StreamingDiffFeature: FeatureModule = {
 
 // ═══ Feature 52: Split Pane Mode ════════════════════
 export const SplitPaneFeature: FeatureModule = {
-  meta: { id: 'split-pane', name: 'Split Pane Mode', description: 'Multi-pane terminal (chat + logs + tests)', category: 'terminal', enabled: true, priority: 'P2' },
+  meta: { id: 'split-pane', name: 'Split Pane Mode', description: 'Multi-pane terminal (chat + logs + tests)', category: 'terminal', enabled: true, priority: 'P2', maturity: 'experimental' },
   getTools() {
     return [{
       name: 'pane_status',
@@ -753,7 +842,7 @@ export const SplitPaneFeature: FeatureModule = {
 
 // ═══ Feature 53: Smart Notification System ═══════════
 export const NotificationFeature: FeatureModule = {
-  meta: { id: 'notifications', name: 'Smart Notification System', description: 'OS notifications for long-running tasks', category: 'terminal', enabled: true, priority: 'P1' },
+  meta: { id: 'notifications', name: 'Smart Notification System', description: 'OS notifications for long-running tasks', category: 'terminal', enabled: true, priority: 'P1', maturity: 'stable' },
   getTools() {
     return [{
       name: 'send_notification',
@@ -770,7 +859,7 @@ export const NotificationFeature: FeatureModule = {
 
 // ═══ Feature 54: Project Health Dashboard ═════════════
 export const HealthDashboardFeature: FeatureModule = {
-  meta: { id: 'health-dashboard', name: 'Project Health Dashboard', description: 'TUI dashboard with project metrics', category: 'terminal', enabled: true, priority: 'P1' },
+  meta: { id: 'health-dashboard', name: 'Project Health Dashboard', description: 'TUI dashboard with project metrics', category: 'terminal', enabled: true, priority: 'P1', maturity: 'beta' },
   getTools() {
     return [{
       name: 'project_health',
@@ -801,7 +890,7 @@ export const HealthDashboardFeature: FeatureModule = {
 
 // ═══ Feature 55: Code Activity Heatmap ═══════════════
 export const ActivityHeatmapFeature: FeatureModule = {
-  meta: { id: 'activity-heatmap', name: 'Code Activity Heatmap', description: 'File modification frequency visualization', category: 'terminal', enabled: true, priority: 'P2' },
+  meta: { id: 'activity-heatmap', name: 'Code Activity Heatmap', description: 'File modification frequency visualization', category: 'terminal', enabled: true, priority: 'P2', maturity: 'beta' },
   getTools() {
     return [{
       name: 'activity_heatmap',

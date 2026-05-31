@@ -3,6 +3,8 @@ import { FeatureModule, FeatureContext } from '../registry';
 import { readFileSafe, runCommand, now_iso } from '../utils';
 import * as path from 'path';
 import * as fs from 'fs/promises';
+import createDebug from 'debug';
+const debug = createDebug('mimo:features:smart-env');
 
 interface EnvIssue { severity: 'error' | 'warning' | 'info'; category: string; message: string; fix?: string; }
 interface TechStack { language: string; framework: string; packageManager: string; runtime: string; tools: string[]; }
@@ -13,11 +15,13 @@ class EnvironmentDetector {
 
   async detect(projectDir: string): Promise<{ stack: TechStack; issues: EnvIssue[] }> {
     this.projectDir = projectDir;
+    debug('Detecting environment for %s', projectDir);
     const issues: EnvIssue[] = [];
 
     // Detect tech stack
     const stack = await this.detectTechStack();
     this.techStack = stack;
+    debug('Detected stack: %s / %s / %s', stack.language, stack.framework, stack.packageManager);
 
     // Check package.json
     const pkgRaw = await readFileSafe(path.join(projectDir, 'package.json'));
@@ -68,6 +72,7 @@ class EnvironmentDetector {
   }
 
   private async detectTechStack(): Promise<TechStack> {
+    debug('Detecting tech stack from project files');
     const stack: TechStack = { language: 'unknown', framework: 'unknown', packageManager: 'npm', runtime: 'node', tools: [] };
 
     // Package manager
@@ -119,8 +124,14 @@ export const SmartEnvironmentFeature: FeatureModule = {
     category: 'perception',
     enabled: true,
     priority: 'P0',
+    maturity: 'stable',
   },
-  async init(ctx: FeatureContext) { await detector.detect(ctx.projectDir); },
+  async init(ctx: FeatureContext) {
+    debug('Initializing Smart Environment feature');
+    const result = await detector.detect(ctx.projectDir);
+    debug('Environment detection complete: %s/%s, %d issues found',
+      result.stack.language, result.stack.framework, result.issues.length);
+  },
   getTools() {
     return [{
       name: 'detect_environment',
@@ -130,6 +141,7 @@ export const SmartEnvironmentFeature: FeatureModule = {
         input_schema: { type: 'object' as const, properties: {} },
       },
       execute: async () => {
+        debug('Tool: detect_environment called');
         const { stack, issues } = await detector.detect(process.cwd());
         const lines = [
           `Language: ${stack.language}`,

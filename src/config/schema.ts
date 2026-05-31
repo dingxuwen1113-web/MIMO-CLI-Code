@@ -1,110 +1,151 @@
-// ── 配置类型定义 ──────────────────────────────────
+// ── Configuration Type Definitions & Zod Schemas ──────────────────
+
+import { z } from 'zod';
+
+// ── Enums / Literal Types ──────────────────────────────────────────
 
 export type ApiMode = 'token-plan' | 'pay-as-you-go';
-export type AgentMode = 'plan' | 'agent' | 'yolo';
+export type AgentMode = 'plan' | 'agent' | 'custom' | 'yolo';
 export type ModelId = 'mimo-v2.5-pro' | 'mimo-v2.5' | 'auto';
+export type ProviderType = 'anthropic' | 'ollama' | 'openai-compatible';
+export type LocaleType = 'zh-CN' | 'en-US';
+export type FeatureMaturity = 'stable' | 'beta' | 'experimental';
 
 const VALID_API_MODES: ApiMode[] = ['token-plan', 'pay-as-you-go'];
-const VALID_AGENT_MODES: AgentMode[] = ['plan', 'agent', 'yolo'];
+const VALID_AGENT_MODES: AgentMode[] = ['plan', 'agent', 'custom', 'yolo'];
 const VALID_MODEL_IDS: ModelId[] = ['mimo-v2.5-pro', 'mimo-v2.5', 'auto'];
+const VALID_PROVIDERS: ProviderType[] = ['anthropic', 'ollama', 'openai-compatible'];
+const VALID_LOCALES: LocaleType[] = ['zh-CN', 'en-US'];
+const VALID_MATURITY_LEVELS: FeatureMaturity[] = ['stable', 'beta', 'experimental'];
 
-export interface TokenPlanConfig {
-  apiKey: string;
-  baseUrl: string;
-  monthlyBudget: number;
-}
+// ── Zod Schemas ────────────────────────────────────────────────────
 
-export interface PayAsYouGoConfig {
-  apiKey: string;
-  baseUrl: string;
-  maxTokensPerTurn: number;
-}
+export const ProviderSchema = z.enum(['anthropic', 'ollama', 'openai-compatible']);
+export const LocaleSchema = z.enum(['zh-CN', 'en-US']);
+export const FeatureMaturitySchema = z.enum(['stable', 'beta', 'experimental']);
+export const ApiModeSchema = z.enum(['token-plan', 'pay-as-you-go']);
+export const AgentModeSchema = z.enum(['plan', 'agent', 'custom', 'yolo']);
+export const ModelIdSchema = z.enum(['mimo-v2.5-pro', 'mimo-v2.5', 'auto']);
 
-export interface ApiConfig {
-  mode: ApiMode;
-  model: ModelId;
-  tokenPlan: TokenPlanConfig;
-  payAsYouGo: PayAsYouGoConfig;
-  stream: boolean;
-}
+export const RateLimitConfigSchema = z.object({
+  requestsPerMinute: z.number().int().min(1).max(10000).default(60),
+  minIntervalMs: z.number().min(0).max(60000).default(1000),
+  maxRetries: z.number().int().min(0).max(10).default(3),
+}).strict();
 
-export interface AgentConfig {
-  mode: AgentMode;
-  maxTurns: number;
-  autoApproveReads: boolean;
-}
+export const TokenPlanConfigSchema = z.object({
+  apiKey: z.string().default(''),
+  baseUrl: z.string().default(''),
+  monthlyBudget: z.number().min(0).finite().default(999_999_999_999),
+}).strict();
 
-export interface ToolConfig {
-  shellTimeout: number;
-  allowedCommands: string[];
-  blockedCommands: string[];
-}
+export const PayAsYouGoConfigSchema = z.object({
+  apiKey: z.string().default(''),
+  baseUrl: z.string().default(''),
+  maxTokensPerTurn: z.number().min(1).finite().default(32768),
+}).strict();
 
-export interface SandboxConfig {
-  enabled: boolean;
-  tmpDir: string;
-}
+export const ApiConfigSchema = z.object({
+  mode: ApiModeSchema.default('token-plan'),
+  model: ModelIdSchema.default('auto'),
+  provider: ProviderSchema.default('anthropic'),
+  tokenPlan: TokenPlanConfigSchema.default({}),
+  payAsYouGo: PayAsYouGoConfigSchema.default({}),
+  stream: z.boolean().default(true),
+  ollamaEndpoint: z.string().default('http://localhost:11434'),
+  openaiEndpoint: z.string().default(''),
+  openaiApiKey: z.string().default(''),
+  rateLimit: RateLimitConfigSchema.default({}),
+}).strict();
 
-export interface PromptCachingConfig {
-  enabled: boolean;
-  cacheTtl: number;
-}
+export const AgentConfigSchema = z.object({
+  mode: AgentModeSchema.default('agent'),
+  maxTurns: z.number().int().min(1).default(50),
+  autoApproveReads: z.boolean().default(true),
+}).strict();
 
-export interface FeaturesConfig {
-  enabled: boolean;
-  disabledFeatures: string[];
-}
+export const ToolConfigSchema = z.object({
+  shellTimeout: z.number().min(0).finite().default(30000),
+  allowedCommands: z.array(z.string()).default([]),
+  blockedCommands: z.array(z.string()).default(['rm -rf /', 'sudo rm -rf']),
+}).strict();
 
-export interface MimoConfig {
-  api: ApiConfig;
+export const SandboxConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  tmpDir: z.string().default('/tmp/mimo-sandbox'),
+}).strict();
+
+export const PromptCachingConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  cacheTtl: z.number().min(0).finite().default(300),
+}).strict();
+
+export const FeaturesConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  disabledFeatures: z.array(z.string()).default([]),
+  maturity: FeatureMaturitySchema.default('stable'),
+}).strict();
+
+export const I18nConfigSchema = z.object({
+  locale: LocaleSchema.default('zh-CN'),
+}).strict();
+
+export const DebugConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+}).strict();
+
+export const MimoConfigSchema = z.object({
+  version: z.number().int().min(1).default(2),
+  api: ApiConfigSchema.default({}),
+  agent: AgentConfigSchema.default({}),
+  tools: ToolConfigSchema.default({}),
+  sandbox: SandboxConfigSchema.default({}),
+  promptCaching: PromptCachingConfigSchema.default({}),
+  features: FeaturesConfigSchema.default({}),
+  i18n: I18nConfigSchema.default({}),
+  debug: DebugConfigSchema.default({}),
+}).strict();
+
+// ── TypeScript Interfaces (derived from zod schemas) ──────────────
+
+export type RateLimitConfig = z.infer<typeof RateLimitConfigSchema>;
+export type TokenPlanConfig = z.infer<typeof TokenPlanConfigSchema>;
+export type PayAsYouGoConfig = z.infer<typeof PayAsYouGoConfigSchema>;
+export type ApiConfig = z.infer<typeof ApiConfigSchema>;
+export type AgentConfig = z.infer<typeof AgentConfigSchema>;
+export type ToolConfig = z.infer<typeof ToolConfigSchema>;
+export type SandboxConfig = z.infer<typeof SandboxConfigSchema>;
+export type PromptCachingConfig = z.infer<typeof PromptCachingConfigSchema>;
+export type FeaturesConfig = z.infer<typeof FeaturesConfigSchema>;
+export type I18nConfig = z.infer<typeof I18nConfigSchema>;
+export type DebugConfig = z.infer<typeof DebugConfigSchema>;
+export type MimoConfig = z.infer<typeof MimoConfigSchema>;
+
+// ── Default Config (built from zod schema defaults) ───────────────
+
+export const DEFAULT_CONFIG: MimoConfig = MimoConfigSchema.parse({});
+
+// ── Backward-compatible V1 interface (used during migration) ──────
+
+export interface MimoConfigV1 {
+  api: {
+    mode: ApiMode;
+    model: ModelId;
+    tokenPlan: TokenPlanConfig;
+    payAsYouGo: PayAsYouGoConfig;
+    stream: boolean;
+  };
   agent: AgentConfig;
   tools: ToolConfig;
   sandbox: SandboxConfig;
   promptCaching: PromptCachingConfig;
-  features: FeaturesConfig;
+  features: {
+    enabled: boolean;
+    disabledFeatures: string[];
+  };
 }
 
-export const DEFAULT_CONFIG: MimoConfig = {
-  api: {
-    mode: 'token-plan',
-    model: 'auto',
-    tokenPlan: {
-      apiKey: '',
-      baseUrl: '',
-      monthlyBudget: 999_999_999_999,
-    },
-    payAsYouGo: {
-      apiKey: '',
-      baseUrl: '',
-      maxTokensPerTurn: 32768,
-    },
-    stream: true,
-  },
-  agent: {
-    mode: 'agent',
-    maxTurns: 50,
-    autoApproveReads: true,
-  },
-  tools: {
-    shellTimeout: 30000,
-    allowedCommands: [],
-    blockedCommands: ['rm -rf /', 'sudo rm -rf'],
-  },
-  sandbox: {
-    enabled: true,
-    tmpDir: '/tmp/mimo-sandbox',
-  },
-  promptCaching: {
-    enabled: true,
-    cacheTtl: 300,
-  },
-  features: {
-    enabled: true,
-    disabledFeatures: [],
-  },
-};
-
-// ── Validation helpers ──────────────────────────────
+// ── Validation helpers (zod-based, with backward-compat API) ─────
 
 export interface ValidationError {
   path: string;
@@ -113,7 +154,7 @@ export interface ValidationError {
 
 /**
  * Validate the full MimoConfig, returning an array of errors.
- * An empty array means the config is valid.
+ * Uses zod internally; falls back gracefully if partial config provided.
  */
 export function validateConfig(config: Partial<MimoConfig>): ValidationError[] {
   const errors: ValidationError[] = [];
@@ -133,6 +174,15 @@ export function validateConfig(config: Partial<MimoConfig>): ValidationError[] {
   if (config.promptCaching) {
     errors.push(...validatePromptCachingConfig(config.promptCaching));
   }
+  if (config.features) {
+    errors.push(...validateFeaturesConfig(config.features));
+  }
+  if (config.i18n) {
+    errors.push(...validateI18nConfig(config.i18n));
+  }
+  if (config.debug) {
+    errors.push(...validateDebugConfig(config.debug));
+  }
 
   return errors;
 }
@@ -146,8 +196,20 @@ export function validateApiConfig(api: Partial<ApiConfig>): ValidationError[] {
   if (api.model !== undefined && !VALID_MODEL_IDS.includes(api.model)) {
     errors.push({ path: 'api.model', message: `Invalid model "${api.model}". Must be one of: ${VALID_MODEL_IDS.join(', ')}` });
   }
+  if (api.provider !== undefined && !VALID_PROVIDERS.includes(api.provider)) {
+    errors.push({ path: 'api.provider', message: `Invalid provider "${api.provider}". Must be one of: ${VALID_PROVIDERS.join(', ')}` });
+  }
   if (api.stream !== undefined && typeof api.stream !== 'boolean') {
     errors.push({ path: 'api.stream', message: 'Must be a boolean' });
+  }
+  if (api.ollamaEndpoint !== undefined && typeof api.ollamaEndpoint !== 'string') {
+    errors.push({ path: 'api.ollamaEndpoint', message: 'Must be a valid URL string' });
+  }
+  if (api.openaiEndpoint !== undefined && typeof api.openaiEndpoint !== 'string') {
+    errors.push({ path: 'api.openaiEndpoint', message: 'Must be a valid URL string' });
+  }
+  if (api.openaiApiKey !== undefined && typeof api.openaiApiKey !== 'string') {
+    errors.push({ path: 'api.openaiApiKey', message: 'Must be a string' });
   }
 
   if (api.tokenPlan) {
@@ -155,6 +217,31 @@ export function validateApiConfig(api: Partial<ApiConfig>): ValidationError[] {
   }
   if (api.payAsYouGo) {
     errors.push(...validatePayAsYouGoConfig(api.payAsYouGo));
+  }
+  if (api.rateLimit) {
+    errors.push(...validateRateLimitConfig(api.rateLimit));
+  }
+
+  return errors;
+}
+
+export function validateRateLimitConfig(rl: Partial<RateLimitConfig>): ValidationError[] {
+  const errors: ValidationError[] = [];
+
+  if (rl.requestsPerMinute !== undefined) {
+    if (typeof rl.requestsPerMinute !== 'number' || !Number.isInteger(rl.requestsPerMinute) || rl.requestsPerMinute < 1) {
+      errors.push({ path: 'api.rateLimit.requestsPerMinute', message: 'Must be a positive integer' });
+    }
+  }
+  if (rl.minIntervalMs !== undefined) {
+    if (typeof rl.minIntervalMs !== 'number' || !isFinite(rl.minIntervalMs) || rl.minIntervalMs < 0) {
+      errors.push({ path: 'api.rateLimit.minIntervalMs', message: 'Must be a non-negative finite number' });
+    }
+  }
+  if (rl.maxRetries !== undefined) {
+    if (typeof rl.maxRetries !== 'number' || !Number.isInteger(rl.maxRetries) || rl.maxRetries < 0) {
+      errors.push({ path: 'api.rateLimit.maxRetries', message: 'Must be a non-negative integer' });
+    }
   }
 
   return errors;
@@ -258,4 +345,144 @@ export function validatePromptCachingConfig(pc: Partial<PromptCachingConfig>): V
   }
 
   return errors;
+}
+
+export function validateFeaturesConfig(features: Partial<FeaturesConfig>): ValidationError[] {
+  const errors: ValidationError[] = [];
+
+  if (features.enabled !== undefined && typeof features.enabled !== 'boolean') {
+    errors.push({ path: 'features.enabled', message: 'Must be a boolean' });
+  }
+  if (features.disabledFeatures !== undefined && !Array.isArray(features.disabledFeatures)) {
+    errors.push({ path: 'features.disabledFeatures', message: 'Must be an array of strings' });
+  }
+  if (features.maturity !== undefined && !VALID_MATURITY_LEVELS.includes(features.maturity)) {
+    errors.push({ path: 'features.maturity', message: `Invalid maturity level "${features.maturity}". Must be one of: ${VALID_MATURITY_LEVELS.join(', ')}` });
+  }
+
+  return errors;
+}
+
+export function validateI18nConfig(i18n: Partial<I18nConfig>): ValidationError[] {
+  const errors: ValidationError[] = [];
+
+  if (i18n.locale !== undefined && !VALID_LOCALES.includes(i18n.locale)) {
+    errors.push({ path: 'i18n.locale', message: `Invalid locale "${i18n.locale}". Must be one of: ${VALID_LOCALES.join(', ')}` });
+  }
+
+  return errors;
+}
+
+export function validateDebugConfig(debug: Partial<DebugConfig>): ValidationError[] {
+  const errors: ValidationError[] = [];
+
+  if (debug.enabled !== undefined && typeof debug.enabled !== 'boolean') {
+    errors.push({ path: 'debug.enabled', message: 'Must be a boolean' });
+  }
+
+  return errors;
+}
+
+// ── Flat-key accessors for `mimo config get/set` ──────────────────
+
+/**
+ * Map of dot-separated config keys to their getter/setter paths.
+ * Used by the config get/set CLI commands.
+ */
+export const CONFIG_KEY_MAP: Record<string, { description: string; type: 'string' | 'number' | 'boolean' }> = {
+  // API section
+  'api.mode':            { description: 'API connection mode (token-plan | pay-as-you-go)', type: 'string' },
+  'api.model':           { description: 'Default model (mimo-v2.5-pro | mimo-v2.5 | auto)', type: 'string' },
+  'api.provider':        { description: 'API provider (anthropic | ollama | openai-compatible)', type: 'string' },
+  'api.stream':          { description: 'Enable streaming responses', type: 'boolean' },
+  'api.ollamaEndpoint':  { description: 'Ollama API endpoint URL', type: 'string' },
+  'api.openaiEndpoint':  { description: 'OpenAI-compatible endpoint URL', type: 'string' },
+  'api.openaiApiKey':    { description: 'API key for OpenAI-compatible endpoints', type: 'string' },
+  'api.tokenPlan.apiKey':       { description: 'Token Plan API key', type: 'string' },
+  'api.tokenPlan.baseUrl':      { description: 'Token Plan base URL', type: 'string' },
+  'api.tokenPlan.monthlyBudget':{ description: 'Monthly token budget', type: 'number' },
+  'api.payAsYouGo.apiKey':      { description: 'Pay-as-you-go API key', type: 'string' },
+  'api.payAsYouGo.baseUrl':     { description: 'Pay-as-you-go base URL', type: 'string' },
+  'api.payAsYouGo.maxTokensPerTurn': { description: 'Max tokens per turn', type: 'number' },
+  // Rate limit section
+  'api.rateLimit.requestsPerMinute': { description: 'Max requests per minute', type: 'number' },
+  'api.rateLimit.minIntervalMs':     { description: 'Minimum interval between requests (ms)', type: 'number' },
+  'api.rateLimit.maxRetries':        { description: 'Max retries on failure', type: 'number' },
+  // Agent section
+  'agent.mode':             { description: 'Agent mode (plan | agent | yolo)', type: 'string' },
+  'agent.maxTurns':         { description: 'Max agent turns', type: 'number' },
+  'agent.autoApproveReads': { description: 'Auto-approve read operations', type: 'boolean' },
+  // Tools section
+  'tools.shellTimeout':     { description: 'Shell command timeout (ms)', type: 'number' },
+  // Sandbox section
+  'sandbox.enabled':        { description: 'Enable sandbox mode', type: 'boolean' },
+  'sandbox.tmpDir':         { description: 'Sandbox temp directory', type: 'string' },
+  // Prompt caching section
+  'promptCaching.enabled':  { description: 'Enable prompt caching', type: 'boolean' },
+  'promptCaching.cacheTtl': { description: 'Cache TTL in seconds', type: 'number' },
+  // Features section
+  'features.enabled':        { description: 'Enable features system', type: 'boolean' },
+  'features.maturity':       { description: 'Feature maturity filter (stable | beta | experimental)', type: 'string' },
+  // i18n section
+  'i18n.locale':            { description: 'UI locale (zh-CN | en-US)', type: 'string' },
+  // Debug section
+  'debug.enabled':          { description: 'Enable debug logging', type: 'boolean' },
+};
+
+/**
+ * Get a nested value from a config object by dot-separated key path.
+ */
+export function getConfigValue(config: MimoConfig, keyPath: string): unknown {
+  const parts = keyPath.split('.');
+  let current: any = config;
+  for (const part of parts) {
+    if (current === undefined || current === null) return undefined;
+    current = current[part];
+  }
+  return current;
+}
+
+/**
+ * Set a nested value in a config object by dot-separated key path.
+ * Returns a new config object (immutable).
+ */
+export function setConfigValue(config: MimoConfig, keyPath: string, value: unknown): MimoConfig {
+  const parts = keyPath.split('.');
+  const result = JSON.parse(JSON.stringify(config)); // deep clone
+  let current: any = result;
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (current[parts[i]] === undefined || typeof current[parts[i]] !== 'object') {
+      current[parts[i]] = {};
+    }
+    current = current[parts[i]];
+  }
+  current[parts[parts.length - 1]] = value;
+  return result;
+}
+
+/**
+ * Parse a string value to the appropriate type for a config key.
+ */
+export function parseConfigValue(keyPath: string, rawValue: string): unknown {
+  const keyInfo = CONFIG_KEY_MAP[keyPath];
+  if (!keyInfo) {
+    throw new Error(`Unknown config key: ${keyPath}. Use "mimo config list" to see available keys.`);
+  }
+
+  switch (keyInfo.type) {
+    case 'boolean': {
+      const lower = rawValue.toLowerCase();
+      if (lower === 'true' || lower === '1' || lower === 'yes') return true;
+      if (lower === 'false' || lower === '0' || lower === 'no') return false;
+      throw new Error(`Invalid boolean value "${rawValue}" for key "${keyPath}". Use true/false.`);
+    }
+    case 'number': {
+      const num = Number(rawValue);
+      if (!isFinite(num)) throw new Error(`Invalid number value "${rawValue}" for key "${keyPath}".`);
+      return num;
+    }
+    case 'string':
+    default:
+      return rawValue;
+  }
 }

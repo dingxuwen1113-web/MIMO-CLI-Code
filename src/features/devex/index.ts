@@ -3,6 +3,8 @@ import { FeatureModule, FeatureContext } from '../registry';
 import { readFileSafe, getSourceFiles, runCommand, now_iso } from '../utils';
 import * as path from 'path';
 import * as fs from 'fs/promises';
+import createDebug from 'debug';
+const debug = createDebug('mimo:features:devex');
 
 // ══════════════════════════════════════════════════════
 // Feature 16: Code Archaeology Mode
@@ -12,6 +14,7 @@ interface FileHistory { commits: Array<{ hash: string; date: string; author: str
 
 class CodeArchaeology {
   async blame(filePath: string, range?: string): Promise<BlameEntry[]> {
+    debug('Running git blame on %s (range=%s)', filePath, range || 'full');
     const args = range ? `-L ${range}` : '';
     const result = await runCommand(`git blame --porcelain ${args} "${filePath}"`, undefined, 15000);
     if (result.code !== 0) return [];
@@ -36,6 +39,7 @@ class CodeArchaeology {
   }
 
   async fileHistory(filePath: string, limit = 20): Promise<FileHistory> {
+    debug('Getting file history for %s (limit=%d)', filePath, limit);
     const result = await runCommand(`git log --oneline --follow -${limit} -- "${filePath}"`);
     const commits = result.stdout.split('\n').filter(l => l.trim()).map(line => {
       const match = line.match(/^([a-f0-9]+)\s+(.+)/);
@@ -45,6 +49,7 @@ class CodeArchaeology {
   }
 
   async whoOwns(filePath: string): Promise<{ author: string; lines: number; percentage: number }[]> {
+    debug('Analyzing ownership for %s', filePath);
     const result = await runCommand(`git blame --line-porcelain "${filePath}" | grep "^author " | sort | uniq -c | sort -rn`, undefined, 15000);
     const lines = result.stdout.split('\n').filter(l => l.trim());
     const totalLines = lines.reduce((sum, l) => sum + parseInt(l.trim()) || 0, 0);
@@ -59,7 +64,7 @@ class CodeArchaeology {
 const archaeology = new CodeArchaeology();
 
 export const CodeArchaeologyFeature: FeatureModule = {
-  meta: { id: 'code-archaeology', name: 'Code Archaeology Mode', description: 'Interactive code history exploration with blame, history, and ownership', category: 'devex', enabled: true, priority: 'P1' },
+  meta: { id: 'code-archaeology', name: 'Code Archaeology Mode', description: 'Interactive code history exploration with blame, history, and ownership', category: 'devex', enabled: true, priority: 'P1', maturity: 'stable' },
   getTools() {
     return [
       { name: 'code_blame', definition: { name: 'code_blame', description: 'View detailed git blame with author and date info', input_schema: { type: 'object' as const, properties: { file: { type: 'string' }, range: { type: 'string', description: 'Line range e.g. "10,50"' } }, required: ['file'] } },
@@ -119,7 +124,7 @@ class CodeTourGenerator {
 const tourGen = new CodeTourGenerator();
 
 export const CodeTourFeature: FeatureModule = {
-  meta: { id: 'code-tour', name: 'Code Tour Generator', description: 'Auto-generate interactive codebase walkthrough', category: 'devex', enabled: true, priority: 'P1' },
+  meta: { id: 'code-tour', name: 'Code Tour Generator', description: 'Auto-generate interactive codebase walkthrough', category: 'devex', enabled: true, priority: 'P1', maturity: 'beta' },
   getTools() {
     return [{
       name: 'generate_code_tour',
@@ -175,7 +180,7 @@ class TimeTravelManager {
 const timeTravel = new TimeTravelManager();
 
 export const TimeTravelFeature: FeatureModule = {
-  meta: { id: 'time-travel', name: 'Time-Travel Undo', description: 'Visual timeline of all changes with per-change rollback', category: 'devex', enabled: true, priority: 'P1' },
+  meta: { id: 'time-travel', name: 'Time-Travel Undo', description: 'Visual timeline of all changes with per-change rollback', category: 'devex', enabled: true, priority: 'P1', maturity: 'stable' },
   async onEvent(event: string, data: any) {
     if (event === 'file_edited' && data.before !== undefined) {
       timeTravel.recordChange(data.file, data.before, data.after || '', data.toolName || 'unknown', data.description || '');
@@ -228,7 +233,7 @@ class SessionForker {
 const forker = new SessionForker();
 
 export const SessionForkingFeature: FeatureModule = {
-  meta: { id: 'session-forking', name: 'Session Forking', description: 'Branch conversations to try different approaches', category: 'devex', enabled: true, priority: 'P1' },
+  meta: { id: 'session-forking', name: 'Session Forking', description: 'Branch conversations to try different approaches', category: 'devex', enabled: true, priority: 'P1', maturity: 'experimental' },
   getTools() {
     return [
       { name: 'fork_session', definition: { name: 'fork_session', description: 'Create a branch of the current conversation', input_schema: { type: 'object' as const, properties: { name: { type: 'string', description: 'Branch name' }, messages: { type: 'array', items: { type: 'object', properties: { role: { type: 'string' }, content: { type: 'string' } } }, description: 'Messages to snapshot (optional, defaults to empty branch)' } }, required: ['name'] } },
@@ -330,7 +335,7 @@ class MultiModalProcessor {
 const multiModal = new MultiModalProcessor();
 
 export const MultiModalFeature: FeatureModule = {
-  meta: { id: 'multi-modal', name: 'Multi-Modal Input', description: 'Enhanced image understanding and input type detection', category: 'devex', enabled: true, priority: 'P1' },
+  meta: { id: 'multi-modal', name: 'Multi-Modal Input', description: 'Enhanced image understanding and input type detection', category: 'devex', enabled: true, priority: 'P1', maturity: 'beta' },
   getTools() {
     return [
       { name: 'detect_input_type', definition: { name: 'detect_input_type', description: 'Detect the type of user input (code, error log, URL, etc.)', input_schema: { type: 'object' as const, properties: { input: { type: 'string' } }, required: ['input'] } },
@@ -369,7 +374,7 @@ class CommandSuggester {
 const suggester = new CommandSuggester();
 
 export const CommandSuggesterFeature: FeatureModule = {
-  meta: { id: 'command-suggester', name: 'Intelligent Command Suggester', description: 'Proactively suggest next actions based on context', category: 'devex', enabled: true, priority: 'P0' },
+  meta: { id: 'command-suggester', name: 'Intelligent Command Suggester', description: 'Proactively suggest next actions based on context', category: 'devex', enabled: true, priority: 'P0', maturity: 'stable' },
   async onEvent(event: string, data: any) {
     if (event === 'post_tool') {
       const suggestions = suggester.suggest({
@@ -428,7 +433,7 @@ class FuzzyNavigator {
 const fuzzyNav = new FuzzyNavigator();
 
 export const FuzzyNavigatorFeature: FeatureModule = {
-  meta: { id: 'fuzzy-navigator', name: 'Fuzzy File Navigator', description: 'Quick-open file finder with fuzzy matching', category: 'devex', enabled: true, priority: 'P1' },
+  meta: { id: 'fuzzy-navigator', name: 'Fuzzy File Navigator', description: 'Quick-open file finder with fuzzy matching', category: 'devex', enabled: true, priority: 'P1', maturity: 'stable' },
   getTools() {
     return [{
       name: 'fuzzy_find',
@@ -482,7 +487,7 @@ class KeybindingManager {
 const keybindingManager = new KeybindingManager();
 
 export const KeybindingFeature: FeatureModule = {
-  meta: { id: 'keybindings', name: 'Customizable Keybindings', description: 'User-configurable keyboard shortcuts', category: 'devex', enabled: true, priority: 'P2' },
+  meta: { id: 'keybindings', name: 'Customizable Keybindings', description: 'User-configurable keyboard shortcuts', category: 'devex', enabled: true, priority: 'P2', maturity: 'experimental' },
   async init(ctx: FeatureContext) { await keybindingManager.load(ctx.homeDir); },
   getTools() {
     return [{
@@ -501,6 +506,7 @@ interface DepNode { name: string; file: string; imports: string[]; importedBy: s
 class DependencyGraphBuilder {
   async build(projectDir: string): Promise<DepNode[]> {
     const files = await getSourceFiles(projectDir);
+    debug('Building dependency graph from %d files', files.length);
     const nodes: Map<string, DepNode> = new Map();
 
     for (const f of files) {
@@ -533,14 +539,16 @@ class DependencyGraphBuilder {
       }
     }
 
-    return Array.from(nodes.values());
+    const result = Array.from(nodes.values());
+    debug('Dependency graph built: %d nodes, %d with importers', result.length, result.filter(n => n.importedBy.length > 0).length);
+    return result;
   }
 }
 
 const depGraphBuilder = new DependencyGraphBuilder();
 
 export const DependencyGraphFeature: FeatureModule = {
-  meta: { id: 'dependency-graph', name: 'Interactive Dependency Graph', description: 'Visualize module dependencies and detect circular deps', category: 'devex', enabled: true, priority: 'P2' },
+  meta: { id: 'dependency-graph', name: 'Interactive Dependency Graph', description: 'Visualize module dependencies and detect circular deps', category: 'devex', enabled: true, priority: 'P2', maturity: 'beta' },
   getTools() {
     return [{
       name: 'build_dependency_graph',
