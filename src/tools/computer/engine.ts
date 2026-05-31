@@ -10,6 +10,7 @@ import { execFile } from 'child_process';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
+import { AutoOrchestrator, isAutomationInstruction, ExecutionResult } from './auto-orchestrator';
 
 // ── Max screenshot size (4096x4096 area to avoid huge payloads) ──
 const MAX_SCREENSHOT_AREA = 4096 * 4096;
@@ -1181,3 +1182,143 @@ export async function executeComputerListWindows(input: Record<string, any>): Pr
     return { output: `List windows failed: ${err.message}`, isError: true };
   }
 }
+
+// ══════════════════════════════════════════════════════════
+//  Auto Automation Orchestrator
+// ══════════════════════════════════════════════════════════
+
+let orchestrator: AutoOrchestrator | null = null;
+
+function getOrchestrator(): AutoOrchestrator {
+  if (!orchestrator) {
+    orchestrator = new AutoOrchestrator();
+  }
+  return orchestrator;
+}
+
+// 实际执行工具调用的函数
+async function executeActualTool(toolName: string, input: Record<string, any>): Promise<ToolResult> {
+  // 这里需要调用ToolRegistry的execute方法
+  // 为了避免循环依赖，我们通过一个全局的工具执行器
+  // 实际使用时，需要在初始化时注入ToolRegistry
+
+  // 临时方案：直接调用各个工具的执行函数
+  switch (toolName) {
+    case 'computer_launch':
+      return await executeComputerLaunch(input);
+    case 'computer_focus':
+      return await executeComputerFocus(input);
+    case 'computer_type':
+      return await executeComputerType(input);
+    case 'computer_key':
+      return await executeComputerKey(input);
+    case 'computer_click':
+      return await executeComputerClick(input);
+    case 'computer_wait':
+      return await executeComputerWait(input);
+    case 'computer_screenshot':
+      return await executeComputerScreenshot(input);
+    case 'computer_scroll':
+      return await executeComputerScroll(input);
+    case 'computer_mouse_move':
+      return await executeComputerMouseMove(input);
+    case 'computer_drag':
+      return await executeComputerDrag(input);
+    case 'computer_list_windows':
+      return await executeComputerListWindows(input);
+    case 'computer_get_cursor':
+      return await executeComputerGetCursor(input);
+    default:
+      return { output: `Unknown tool: ${toolName}`, isError: true };
+  }
+}
+
+export async function executeComputerAuto(input: Record<string, any>): Promise<ToolResult> {
+  try {
+    const instruction = input.instruction;
+    if (typeof instruction !== 'string' || instruction.length === 0) {
+      return {
+        output: 'Instruction parameter is required and must be a non-empty string',
+        isError: true,
+      };
+    }
+
+    const dryRun = input.dryRun || false;
+    const verbose = input.verbose || false;
+
+    // 检查是否是自动化指令
+    if (!isAutomationInstruction(instruction)) {
+      return {
+        output: 'Instruction does not appear to be an automation command. Try using keywords like: 打开, 输入, 点击, 保存, etc.',
+        isError: true,
+      };
+    }
+
+    const orch = getOrchestrator();
+
+    // 注入实际的工具执行器
+    (orch as any).executeTool = executeActualTool;
+
+    if (verbose) {
+      console.log(`[Auto] Executing instruction: ${instruction}`);
+      console.log(`[Auto] Dry run: ${dryRun}`);
+    }
+
+    // 执行自动化
+    const result = await orch.execute(instruction);
+
+    // 格式化输出
+    const output = formatExecutionResult(result, verbose);
+
+    return {
+      output: JSON.stringify(output, null, 2),
+      isError: !result.success,
+    };
+  } catch (err: any) {
+    return {
+      output: `Auto automation failed: ${err.message}`,
+      isError: true,
+    };
+  }
+}
+
+function formatExecutionResult(result: ExecutionResult, verbose: boolean): any {
+  const output: any = {
+    success: result.success,
+    summary: result.summary,
+    workflowId: result.workflowId,
+    totalDuration: `${result.totalDuration}ms`,
+    stepCount: result.steps.length,
+    successfulSteps: result.steps.filter((s) => s.success).length,
+    failedSteps: result.steps.filter((s) => !s.success).length,
+  };
+
+  if (verbose) {
+    output.steps = result.steps.map((step) => ({
+      step: step.stepIndex + 1,
+      description: step.description,
+      tool: step.tool,
+      status: step.success ? '✅' : '❌',
+      duration: `${step.duration}ms`,
+      output: step.output ? step.output.substring(0, 100) + (step.output.length > 100 ? '...' : '') : undefined,
+      error: step.error,
+    }));
+  }
+
+  // 添加建议
+  if (!result.success) {
+    output.suggestions = [
+      'Try breaking the instruction into smaller steps',
+      'Check if the target application is already open',
+      'Use more specific keywords (e.g., "点击坐标 100, 200" instead of "点击这里")',
+      'Add wait times between operations (e.g., "打开应用，等待2秒，输入文字")',
+    ];
+  }
+
+  return output;
+}
+
+// 导出工具函数供外部使用
+export { isAutomationInstruction, parseInstruction } from './auto-orchestrator';
+export type { AutomationStep, AutomationWorkflow, ExecutionResult } from './auto-orchestrator';
+

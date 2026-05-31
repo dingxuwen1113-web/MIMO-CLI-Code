@@ -162,7 +162,7 @@ describe('Integration with Existing Computer Tools', () => {
     const tools = registry.getToolNames();
 
     const computerTools = tools.filter(t => t.startsWith('computer_'));
-    expect(computerTools.length).toBe(12); // 9 original + 3 new
+    expect(computerTools.length).toBe(13); // 9 original + 3 new + 1 auto
   });
 
   it('new tools should follow same pattern as existing tools', () => {

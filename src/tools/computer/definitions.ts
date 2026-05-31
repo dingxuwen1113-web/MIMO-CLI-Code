@@ -280,6 +280,42 @@ export const computerListWindowsTool: ToolDefinition = {
   permission: 'auto',
 };
 
+// ── Auto Automation ───────────────────────────────────────────────────
+
+export const computerAutoTool: ToolDefinition = {
+  name: 'computer_auto',
+  description:
+    'Execute complex automation workflows using natural language instructions. ' +
+    'Describe what you want to do in plain language, and the system will automatically ' +
+    'break it down into steps and execute them. ' +
+    'Examples: ' +
+    '"打开记事本并输入Hello World" - Opens Notepad and types Hello World ' +
+    '"打开浏览器搜索天气" - Opens browser and searches for weather ' +
+    '"截图并保存" - Takes a screenshot ' +
+    '"切换到Chrome，点击地址栏，输入网址" - Switch to Chrome, click address bar, enter URL ' +
+    'Supports Chinese and English instructions. ' +
+    'Can chain multiple operations: "打开应用A，输入文字，保存，关闭"',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      instruction: {
+        type: 'string',
+        description: 'Natural language automation instruction in Chinese or English',
+      },
+      dryRun: {
+        type: 'boolean',
+        description: 'If true, only parse and show steps without executing (default: false)',
+      },
+      verbose: {
+        type: 'boolean',
+        description: 'If true, show detailed execution logs (default: false)',
+      },
+    },
+    required: ['instruction'],
+  },
+  permission: 'ask',
+};
+
 // ── Aggregate array of all computer tools ─────────────────────────────
 
 export const allComputerTools: ToolDefinition[] = [
@@ -295,4 +331,5 @@ export const allComputerTools: ToolDefinition[] = [
   computerLaunchTool,
   computerFocusTool,
   computerListWindowsTool,
+  computerAutoTool,
 ];

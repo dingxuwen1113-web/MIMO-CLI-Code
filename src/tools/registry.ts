@@ -45,11 +45,13 @@ import {
   computerScreenshotTool, computerClickTool, computerTypeTool, computerKeyTool,
   computerMouseMoveTool, computerDragTool, computerScrollTool, computerWaitTool,
   computerGetCursorTool, computerLaunchTool, computerFocusTool, computerListWindowsTool,
+  computerAutoTool,
 } from './computer/definitions';
 import {
   executeComputerScreenshot, executeComputerClick, executeComputerType, executeComputerKey,
   executeComputerMouseMove, executeComputerDrag, executeComputerScroll, executeComputerWait,
   executeComputerGetCursor, executeComputerLaunch, executeComputerFocus, executeComputerListWindows,
+  executeComputerAuto,
 } from './computer/engine';
 import { imageReadTool, fileUploadTool, executeImageRead, executeFileUpload } from './image/image';
 import { autoReviewTool } from './review/definitions';
@@ -136,6 +138,7 @@ export class ToolRegistry {
       computerScreenshotTool, computerClickTool, computerTypeTool, computerKeyTool,
       computerMouseMoveTool, computerDragTool, computerScrollTool, computerWaitTool,
       computerGetCursorTool, computerLaunchTool, computerFocusTool, computerListWindowsTool,
+      computerAutoTool,
       // Auto Review
       autoReviewTool,
       // Cyber Safety
@@ -239,7 +242,7 @@ export class ToolRegistry {
          'browser_gif_start', 'browser_gif_stop', 'browser_gif_export',
          'browser_select_browser', 'browser_resize',
          'computer_click', 'computer_type', 'computer_key', 'computer_drag',
-         'computer_launch'].includes(toolName)) {
+         'computer_launch', 'computer_auto'].includes(toolName)) {
       return this.modeManager.getMode() === 'yolo' ? 'auto' : 'ask';
     }
 
@@ -371,6 +374,7 @@ export class ToolRegistry {
         case 'computer_launch':     return await executeComputerLaunch(input);
         case 'computer_focus':      return await executeComputerFocus(input);
         case 'computer_list_windows': return await executeComputerListWindows(input);
+        case 'computer_auto':       return await executeComputerAuto(input);
         // Auto Review
         case 'auto_review':         return await executeAutoReview(input);
         // Cyber Safety
