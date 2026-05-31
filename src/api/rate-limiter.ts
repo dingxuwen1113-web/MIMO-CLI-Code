@@ -16,10 +16,10 @@ export interface RateLimiterConfig {
 
 const DEFAULT_CONFIG: RateLimiterConfig = {
   requestsPerMinute: 9999,
-  minIntervalMs: 3000,       // 3s between requests (stay under ~20 RPM)
-  cooldownBaseMs: 15000,     // 429 → wait 15s first retry
+  minIntervalMs: 30000,      // 30s between requests (MiFE ~1 RPM limit)
+  cooldownBaseMs: 30000,     // 429 → wait 30s
   cooldownMaxMs: 60000,      // max wait 60s
-  cooldownMultiplier: 2,     // 15s → 30s → 60s
+  cooldownMultiplier: 2,     // 30s → 60s → 60s
   maxRetries: 3,             // retry up to 3 times on 429
 };
 
