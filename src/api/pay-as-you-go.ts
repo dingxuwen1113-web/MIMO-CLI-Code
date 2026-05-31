@@ -24,11 +24,6 @@ export class PayAsYouGoAdapter implements ApiAdapter {
     this.config = config;
     const baseUrl = config.api.payAsYouGo.baseUrl;
 
-    // Clear ANTHROPIC_BASE_URL env var so the SDK doesn't override our explicit baseURL.
-    if (baseUrl && process.env.ANTHROPIC_BASE_URL && process.env.ANTHROPIC_BASE_URL !== baseUrl) {
-      delete process.env.ANTHROPIC_BASE_URL;
-    }
-
     const clientOpts: Record<string, any> = {
       apiKey: config.api.payAsYouGo.apiKey,
       maxRetries: 0,

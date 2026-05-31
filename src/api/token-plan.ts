@@ -30,11 +30,6 @@ export class TokenPlanAdapter implements ApiAdapter {
     this.baseUrl = config.api.tokenPlan.baseUrl || '';
     this.apiKey = config.api.tokenPlan.apiKey;
 
-    // Force env var to match config so SDK uses the correct URL
-    if (this.baseUrl) {
-      process.env.ANTHROPIC_BASE_URL = this.baseUrl;
-    }
-
     const clientOpts: Record<string, any> = {
       apiKey: this.apiKey,
       maxRetries: 0,
