@@ -46,6 +46,7 @@
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
+    "@types/debug": "^4.1.13",
     "@types/diff": "^6.0.0",
     "@types/node": "^22.10.5",
     "@types/react": "^18.3.18",
