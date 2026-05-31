@@ -44,12 +44,12 @@ import { notebookReadTool, notebookEditTool, executeNotebookRead, executeNoteboo
 import {
   computerScreenshotTool, computerClickTool, computerTypeTool, computerKeyTool,
   computerMouseMoveTool, computerDragTool, computerScrollTool, computerWaitTool,
-  computerGetCursorTool,
+  computerGetCursorTool, computerLaunchTool, computerFocusTool, computerListWindowsTool,
 } from './computer/definitions';
 import {
   executeComputerScreenshot, executeComputerClick, executeComputerType, executeComputerKey,
   executeComputerMouseMove, executeComputerDrag, executeComputerScroll, executeComputerWait,
-  executeComputerGetCursor,
+  executeComputerGetCursor, executeComputerLaunch, executeComputerFocus, executeComputerListWindows,
 } from './computer/engine';
 import { imageReadTool, fileUploadTool, executeImageRead, executeFileUpload } from './image/image';
 import { autoReviewTool } from './review/definitions';
@@ -135,7 +135,7 @@ export class ToolRegistry {
       // Computer (desktop GUI automation)
       computerScreenshotTool, computerClickTool, computerTypeTool, computerKeyTool,
       computerMouseMoveTool, computerDragTool, computerScrollTool, computerWaitTool,
-      computerGetCursorTool,
+      computerGetCursorTool, computerLaunchTool, computerFocusTool, computerListWindowsTool,
       // Auto Review
       autoReviewTool,
       // Cyber Safety
@@ -204,6 +204,7 @@ export class ToolRegistry {
       'task_list', 'task_get',
       'notebook_read', 'image_read',
       'computer_screenshot', 'computer_mouse_move', 'computer_scroll', 'computer_get_cursor', 'computer_wait',
+      'computer_focus', 'computer_list_windows',
       'auto_review', 'cyber_scan',
     ];
     if (readOnlyTools.includes(toolName)) return 'auto';
@@ -237,7 +238,8 @@ export class ToolRegistry {
          'browser_file_upload', 'browser_drag', 'browser_tabs_close',
          'browser_gif_start', 'browser_gif_stop', 'browser_gif_export',
          'browser_select_browser', 'browser_resize',
-         'computer_click', 'computer_type', 'computer_key', 'computer_drag'].includes(toolName)) {
+         'computer_click', 'computer_type', 'computer_key', 'computer_drag',
+         'computer_launch'].includes(toolName)) {
       return this.modeManager.getMode() === 'yolo' ? 'auto' : 'ask';
     }
 
@@ -366,6 +368,9 @@ export class ToolRegistry {
         case 'computer_scroll':     return await executeComputerScroll(input);
         case 'computer_wait':       return await executeComputerWait(input);
         case 'computer_get_cursor': return await executeComputerGetCursor(input);
+        case 'computer_launch':     return await executeComputerLaunch(input);
+        case 'computer_focus':      return await executeComputerFocus(input);
+        case 'computer_list_windows': return await executeComputerListWindows(input);
         // Auto Review
         case 'auto_review':         return await executeAutoReview(input);
         // Cyber Safety

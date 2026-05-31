@@ -205,6 +205,81 @@ export const computerGetCursorTool: ToolDefinition = {
   permission: 'auto',
 };
 
+// ── Launch Application ────────────────────────────────────────────────
+
+export const computerLaunchTool: ToolDefinition = {
+  name: 'computer_launch',
+  description:
+    'Launch or open a desktop application. Supports Windows (.exe), macOS (.app), and Linux executables. ' +
+    'Can pass command-line arguments to the application. ' +
+    'Examples: "notepad", "Calculator", "/Applications/Safari.app", "firefox".',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      application: {
+        type: 'string',
+        description: 'Application name or path to executable. Examples: "notepad", "Calculator", "/Applications/Safari.app", "firefox"',
+      },
+      args: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Command-line arguments to pass to the application (optional)',
+      },
+      wait: {
+        type: 'boolean',
+        description: 'Wait for application to exit (default: false)',
+      },
+    },
+    required: ['application'],
+  },
+  permission: 'ask',
+};
+
+// ── Focus Window ──────────────────────────────────────────────────────
+
+export const computerFocusTool: ToolDefinition = {
+  name: 'computer_focus',
+  description:
+    'Switch to (focus) a specific application window by name or window ID. ' +
+    'Brings the window to the foreground so subsequent keyboard/mouse operations target it. ' +
+    'Examples: "Notepad", "Safari", "Calculator".',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      application: {
+        type: 'string',
+        description: 'Application name to focus (partial match supported)',
+      },
+      windowId: {
+        type: 'number',
+        description: 'Window ID to focus (alternative to application name)',
+      },
+    },
+    required: [],
+  },
+  permission: 'auto',
+};
+
+// ── List Windows ──────────────────────────────────────────────────────
+
+export const computerListWindowsTool: ToolDefinition = {
+  name: 'computer_list_windows',
+  description:
+    'List all currently open windows with their titles and IDs. ' +
+    'Useful for identifying target applications before using computer_focus or computer_click.',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      filter: {
+        type: 'string',
+        description: 'Filter windows by title (case-insensitive substring match, optional)',
+      },
+    },
+    required: [],
+  },
+  permission: 'auto',
+};
+
 // ── Aggregate array of all computer tools ─────────────────────────────
 
 export const allComputerTools: ToolDefinition[] = [
@@ -217,4 +292,7 @@ export const allComputerTools: ToolDefinition[] = [
   computerScrollTool,
   computerWaitTool,
   computerGetCursorTool,
+  computerLaunchTool,
+  computerFocusTool,
+  computerListWindowsTool,
 ];
