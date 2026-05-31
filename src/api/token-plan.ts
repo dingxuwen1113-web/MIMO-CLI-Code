@@ -3,6 +3,7 @@ import createDebug from 'debug';
 import { MimoConfig } from '../config/schema';
 import { ApiAdapter, BudgetInfo, UsageStats, StreamCallbacks } from './types';
 import { getGlobalRateLimiter } from './rate-limiter';
+import { getSharedHttpAgents } from './http-client';
 
 const debug = createDebug('mimo:api');
 
@@ -28,10 +29,13 @@ export class TokenPlanAdapter implements ApiAdapter {
     this.monthlyBudget = config.api.tokenPlan.monthlyBudget;
     this.cacheTtl = (config.promptCaching.cacheTtl || 300) * 1000;
 
+    const { httpAgent, httpsAgent } = getSharedHttpAgents();
     const clientOpts: Record<string, any> = {
       apiKey: config.api.tokenPlan.apiKey,
       maxRetries: 0,
       timeout: 120_000,
+      httpAgent,
+      httpsAgent,
     };
     if (config.api.tokenPlan.baseUrl) {
       clientOpts.baseURL = config.api.tokenPlan.baseUrl;
@@ -81,7 +85,6 @@ export class TokenPlanAdapter implements ApiAdapter {
       this.trackUsage(response.usage);
       return response;
     } catch (err: any) {
-      // If pro model gets 429, auto-downgrade to mimo-v2.5 and retry
       if (err?.status === 429 && model === 'mimo-v2.5-pro') {
         debug('mimo-v2.5-pro got 429, downgrading to mimo-v2.5');
         createParams.model = 'mimo-v2.5';
@@ -135,19 +138,26 @@ export class TokenPlanAdapter implements ApiAdapter {
         let textEmitted = false;
         const stream = this.client.messages.stream(streamParams);
 
+        // Buffer thinking output — render once at block end, not per-delta
+        let thinkingBuffer = '';
+
         stream.on('text', (text) => {
           textEmitted = true;
           callbacks.onText?.(text);
         });
-        stream.on('thinking', (thinkingDelta: string, _snapshot: string) => {
-          callbacks.onThinking?.(thinkingDelta);
+
+        stream.on('thinking', (thinkingDelta: string) => {
+          thinkingBuffer += thinkingDelta;
         });
+
         stream.on('contentBlock', (block) => {
           if (block.type === 'tool_use') {
             callbacks.onToolUse?.(block as Anthropic.ToolUseBlock);
           }
-          if (block.type === 'thinking') {
-            callbacks.onThinking?.((block as any).thinking || '');
+          // Flush accumulated thinking when the block ends
+          if (block.type === 'thinking' && thinkingBuffer) {
+            callbacks.onThinking?.(thinkingBuffer);
+            thinkingBuffer = '';
           }
         });
 
@@ -155,7 +165,6 @@ export class TokenPlanAdapter implements ApiAdapter {
           return await stream.finalMessage();
         } catch (innerErr: any) {
           if (textEmitted && (innerErr?.status === 429 || String(innerErr?.message).includes('429'))) {
-            // Text was already streamed to the user — don't retry, it would duplicate
             const err = new Error('429_rate_limit: Rate limit during streaming (partial response already sent).');
             (err as any).__noRetry = true;
             throw err;
@@ -172,7 +181,6 @@ export class TokenPlanAdapter implements ApiAdapter {
       this.trackUsage(finalMessage.usage);
       return finalMessage;
     } catch (err: any) {
-      // If streaming gets 429, fall back to non-streaming chat() which has SDK retry logic
       if (err?.status === 429) {
         debug('Streaming got 429, falling back to non-streaming (with auto model downgrade)');
         return this.chat(messages, tools, systemPrompt, options);
@@ -235,7 +243,7 @@ export class TokenPlanAdapter implements ApiAdapter {
   }
 
   private checkBudget(): void {
-    if (this.monthlyBudget <= 0) return; // unlimited plan
+    if (this.monthlyBudget <= 0) return;
     const pct = (this.usedTokens / this.monthlyBudget) * 100;
     if (pct >= 100) {
       throw new Error(`Budget exhausted: ${this.usedTokens.toLocaleString()}/${this.monthlyBudget.toLocaleString()} tokens used this period. Upgrade your plan or wait for reset.`);
@@ -275,7 +283,6 @@ export class TokenPlanAdapter implements ApiAdapter {
       return new Error('Token Plan API key does not have permission for this operation. Check your plan limits.');
     }
     if (status === 429 || message.includes('429')) {
-      // Rate limiter already exhausted retries — surface as non-fatal
       return new Error('429_rate_limit: Rate limit exceeded after retries. Please wait a moment and try again.');
     }
     if (status === 529 || message.includes('529')) {
