@@ -1,0 +1,72 @@
+# Irish Gaelic (ga) - MIMO CLI Code Translations
+
+approval:
+  choose: "Roghnaigh"
+  allowed: "Ceadaite"
+  denied: "Diolta"
+  allow_all: "Ceadaigh uile"
+  create_plan: "Crian plean"
+  tool_approval_prompt: "Ar mhaith leat an uirlis seo a ceadaigh le ritheamh?"
+
+session:
+  new: "Seisiun nua"
+  cleared: "Seisiun glanta"
+  saved: "Seisiun sabhalta"
+  resumed: "Seisiun atosaigh"
+  forked: "Seisiun gabhlaigh"
+  compressed: "Seisiun comhbhruite"
+  rolled_back: "Seisiun aischurtha"
+
+mode:
+  plan: "Modh plean"
+  agent: "Modh gnatharaigh"
+  yolo: "Modh YOLO"
+  switched: "Aistrithe go modh {mode}"
+
+errors:
+  api_key_invalid: "Tas an eochair API neamhbhaili no in easnamh. Seiceail do chumraocht le do thoil."
+  rate_limit: "Sroichte an teorainn rata. Bain triail eile as i {retry} soicind le do thoil."
+  timeout: "Iarratas imithe in eags. Bain triail eile as le do thoil."
+  unknown: "Tharla earraid anaithnid."
+  network_error: "Earrail liochta. Seiceail do nasc idirlin le do thoil."
+
+tools:
+  executing: "Ag ritheamh uirlis: {tool}"
+  completed: "Uirlis crioch: {tool}"
+  failed: "Uirlis theip: {tool}"
+  permission_denied: "Diultaithe cead don uirlis: {tool}"
+
+memory:
+  saved: "Cuimhne sabhalta"
+  loaded: "Cuimhne loata"
+  searched: "Cuimhne cuardaithe"
+  exported: "Cuimhne onnmhairithe"
+  imported: "Cuimhne ionnmhairithe"
+
+skills:
+  matched: "Scil a mheaitseail: {skill}"
+  loaded: "Scil loata: {skill}"
+  none_matched: "Ni bhfuarthas aon scileanna a mheaitseal"
+
+gateway:
+  connected: "Ceangailte le geata"
+  disconnected: "Dicheangailte on geata"
+  message_received: "Teachtaireacht faighte"
+  approval_expired: "Iarratas formheasa imithe in eags"
+
+config:
+  saved: "Cumraocht sabhalta"
+  loaded: "Cumraocht loata"
+  invalid: "Cumraocht neamhbhaili"
+  setup_required: "Ta bun-socru riachtanach. Ritheamh `mimo init` le tosu."
+
+general:
+  yes: "Ta"
+  no: "Nil"
+  ok: "Ceart go leor"
+  cancel: "Cealaigh"
+  loading: "Ag lodail..."
+  done: "Deanta"
+  error: "Earrail"
+  warning: "Rabhadh"
+  info: "Eolas"

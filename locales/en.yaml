@@ -1,0 +1,73 @@
+# English (en) - MIMO CLI Code Translations
+# Default/fallback locale
+
+approval:
+  choose: "Choose"
+  allowed: "Allowed"
+  denied: "Denied"
+  allow_all: "Allow all"
+  create_plan: "Create plan"
+  tool_approval_prompt: "Do you want to allow this tool to run?"
+
+session:
+  new: "New session"
+  cleared: "Session cleared"
+  saved: "Session saved"
+  resumed: "Session resumed"
+  forked: "Session forked"
+  compressed: "Session compressed"
+  rolled_back: "Session rolled back"
+
+mode:
+  plan: "Plan mode"
+  agent: "Agent mode"
+  yolo: "YOLO mode"
+  switched: "Switched to {mode} mode"
+
+errors:
+  api_key_invalid: "API key is invalid or missing. Please check your configuration."
+  rate_limit: "Rate limit reached. Please retry in {retry} seconds."
+  timeout: "Request timed out. Please try again."
+  unknown: "An unknown error occurred."
+  network_error: "Network error. Please check your internet connection."
+
+tools:
+  executing: "Executing tool: {tool}"
+  completed: "Tool completed: {tool}"
+  failed: "Tool failed: {tool}"
+  permission_denied: "Permission denied for tool: {tool}"
+
+memory:
+  saved: "Memory saved"
+  loaded: "Memory loaded"
+  searched: "Memory searched"
+  exported: "Memory exported"
+  imported: "Memory imported"
+
+skills:
+  matched: "Matched skill: {skill}"
+  loaded: "Loaded skill: {skill}"
+  none_matched: "No matching skills found"
+
+gateway:
+  connected: "Connected to gateway"
+  disconnected: "Disconnected from gateway"
+  message_received: "Message received"
+  approval_expired: "Approval request expired"
+
+config:
+  saved: "Configuration saved"
+  loaded: "Configuration loaded"
+  invalid: "Invalid configuration"
+  setup_required: "Initial setup is required. Run `mimo init` to get started."
+
+general:
+  yes: "Yes"
+  no: "No"
+  ok: "OK"
+  cancel: "Cancel"
+  loading: "Loading..."
+  done: "Done"
+  error: "Error"
+  warning: "Warning"
+  info: "Info"

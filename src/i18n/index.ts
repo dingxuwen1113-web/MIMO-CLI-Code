@@ -1,21 +1,22 @@
-export { LocaleManager, t, getLocaleManager } from './locale';
-export type { Locale } from './locale';
-export { default as zhCN } from './zh-CN';
-export { default as enUS } from './en-US';
-
-import { getLocaleManager } from './locale';
-import zhCN from './zh-CN';
-import enUS from './en-US';
-
 /**
- * Initialize i18n system with default messages.
- * Call this once at application startup.
+ * I18n Module - Internationalization for MIMO CLI Code
+ *
+ * Supports 16 languages with YAML-based translations, dot-path key resolution,
+ * string interpolation, and automatic locale detection.
+ *
+ * @example
+ *   import { i18n } from './i18n';
+ *   i18n.init({ locale: 'zh' });
+ *   console.log(i18n.t('approval.choose'));          // "选择"
+ *   console.log(i18n.t('errors.rate_limit', { retry: 30 }));
  */
-export function initI18n(locale?: 'zh-CN' | 'en-US'): void {
-  const manager = getLocaleManager();
-  manager.loadMessages(zhCN);
-  manager.loadMessages(enUS);
-  if (locale) {
-    manager.setLocale(locale);
-  }
-}
+
+export { i18n, resolveLocale, normalizeLocale } from './resolver';
+export { loadTranslationFile, loadTranslations, flattenTranslations, resolveKey } from './loader';
+export type {
+  SupportedLocale,
+  TranslationDict,
+  NestedTranslationDict,
+  I18nConfig,
+  InterpolationParams,
+} from './types';

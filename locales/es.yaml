@@ -1,0 +1,72 @@
+# Spanish (es) - MIMO CLI Code Translations
+
+approval:
+  choose: "Elegir"
+  allowed: "Permitido"
+  denied: "Denegado"
+  allow_all: "Permitir todo"
+  create_plan: "Crear plan"
+  tool_approval_prompt: "Desea permitir que esta herramienta se ejecute?"
+
+session:
+  new: "Nueva sesion"
+  cleared: "Sesion borrada"
+  saved: "Sesion guardada"
+  resumed: "Sesion reanudada"
+  forked: "Sesion bifurcada"
+  compressed: "Sesion comprimida"
+  rolled_back: "Sesion revertida"
+
+mode:
+  plan: "Modo plan"
+  agent: "Modo agente"
+  yolo: "Modo YOLO"
+  switched: "Cambiado al modo {mode}"
+
+errors:
+  api_key_invalid: "La clave de API no es valida o falta. Por favor verifique su configuracion."
+  rate_limit: "Limite de velocidad alcanzado. Por favor reintente en {retry} segundos."
+  timeout: "La solicitud ha expirado. Por favor intente de nuevo."
+  unknown: "Se produjo un error desconocido."
+  network_error: "Error de red. Por favor verifique su conexion a internet."
+
+tools:
+  executing: "Ejecutando herramienta: {tool}"
+  completed: "Herramienta completada: {tool}"
+  failed: "Herramienta fallida: {tool}"
+  permission_denied: "Permiso denegado para la herramienta: {tool}"
+
+memory:
+  saved: "Memoria guardada"
+  loaded: "Memoria cargada"
+  searched: "Memoria buscada"
+  exported: "Memoria exportada"
+  imported: "Memoria importada"
+
+skills:
+  matched: "Habilidad encontrada: {skill}"
+  loaded: "Habilidad cargada: {skill}"
+  none_matched: "No se encontraron habilidades coincidentes"
+
+gateway:
+  connected: "Conectado al gateway"
+  disconnected: "Desconectado del gateway"
+  message_received: "Mensaje recibido"
+  approval_expired: "Solicitud de aprobacion expirada"
+
+config:
+  saved: "Configuracion guardada"
+  loaded: "Configuracion cargada"
+  invalid: "Configuracion invalida"
+  setup_required: "Se requiere configuracion inicial. Ejecute `mimo init` para comenzar."
+
+general:
+  yes: "Si"
+  no: "No"
+  ok: "Aceptar"
+  cancel: "Cancelar"
+  loading: "Cargando..."
+  done: "Listo"
+  error: "Error"
+  warning: "Advertencia"
+  info: "Informacion"

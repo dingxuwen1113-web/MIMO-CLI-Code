@@ -1,0 +1,72 @@
+# German (de) - MIMO CLI Code Translations
+
+approval:
+  choose: "Auswählen"
+  allowed: "Erlaubt"
+  denied: "Verweigert"
+  allow_all: "Alle erlauben"
+  create_plan: "Plan erstellen"
+  tool_approval_prompt: "Möchten Sie die Ausführung dieses Tools erlauben?"
+
+session:
+  new: "Neue Sitzung"
+  cleared: "Sitzung gelöscht"
+  saved: "Sitzung gespeichert"
+  resumed: "Sitzung fortgesetzt"
+  forked: "Sitzung geforkt"
+  compressed: "Sitzung komprimiert"
+  rolled_back: "Sitzung zurückgesetzt"
+
+mode:
+  plan: "Planmodus"
+  agent: "Agentenmodus"
+  yolo: "YOLO-Modus"
+  switched: "Zu {mode}-Modus gewechselt"
+
+errors:
+  api_key_invalid: "API-Schlüssel ist ungültig oder fehlt. Bitte überprüfen Sie Ihre Konfiguration."
+  rate_limit: "Ratenlimit erreicht. Bitte versuchen Sie es in {retry} Sekunden erneut."
+  timeout: "Zeitüberschreitung bei der Anfrage. Bitte versuchen Sie es erneut."
+  unknown: "Ein unbekannter Fehler ist aufgetreten."
+  network_error: "Netzwerkfehler. Bitte überprüfen Sie Ihre Internetverbindung."
+
+tools:
+  executing: "Tool wird ausgeführt: {tool}"
+  completed: "Tool abgeschlossen: {tool}"
+  failed: "Tool fehlgeschlagen: {tool}"
+  permission_denied: "Berechtigung verweigert für Tool: {tool}"
+
+memory:
+  saved: "Speicher gespeichert"
+  loaded: "Speicher geladen"
+  searched: "Speicher durchsucht"
+  exported: "Speicher exportiert"
+  imported: "Speicher importiert"
+
+skills:
+  matched: "Fähigkeit gefunden: {skill}"
+  loaded: "Fähigkeit geladen: {skill}"
+  none_matched: "Keine passenden Fähigkeiten gefunden"
+
+gateway:
+  connected: "Mit Gateway verbunden"
+  disconnected: "Vom Gateway getrennt"
+  message_received: "Nachricht empfangen"
+  approval_expired: "Genehmigungsanfrage abgelaufen"
+
+config:
+  saved: "Konfiguration gespeichert"
+  loaded: "Konfiguration geladen"
+  invalid: "Ungültige Konfiguration"
+  setup_required: "Ersteinrichtung erforderlich. Führen Sie `mimo init` aus, um zu beginnen."
+
+general:
+  yes: "Ja"
+  no: "Nein"
+  ok: "OK"
+  cancel: "Abbrechen"
+  loading: "Wird geladen..."
+  done: "Fertig"
+  error: "Fehler"
+  warning: "Warnung"
+  info: "Info"

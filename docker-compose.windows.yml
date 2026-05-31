@@ -1,0 +1,86 @@
+# =============================================================================
+# MIMO CLI Code - Windows-Specific Docker Compose Overrides
+# =============================================================================
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.windows.yml up
+#
+# This file handles Windows-specific concerns:
+#   - Volume path adjustments (bind mount paths, Git Bash / MSYS compatibility)
+#   - Environment variable quoting for Windows shell
+#   - Named volume overrides to avoid path translation issues
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # MIMO Agent - Windows overrides
+  # ---------------------------------------------------------------------------
+  mimo:
+    # On Windows, named volumes avoid path translation issues with bind mounts.
+    # If you must bind-mount a Windows path, use a named volume or an absolute
+    # Windows path (e.g., C:/Users/you/code:/workspace).
+    volumes:
+      - mimo_home_win:/home/mimo/.mimo
+      - mimo_workspace_win:/workspace
+      # Optional: bind-mount a Windows directory into the container.
+      # Uncomment and adjust the left-hand path as needed:
+      # - C:/Users/YourUser/Projects/my-project:/workspace
+
+    environment:
+      # Windows CMD / PowerShell may not expand ${VAR:-default} the same way.
+      # Explicitly set values here as needed.
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - MIMO_MODEL=${MIMO_MODEL:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - MIMO_API_HOST=0.0.0.0
+      - MIMO_API_PORT=9120
+      - MIMO_DASHBOARD_PORT=9119
+      - MIMO_LOG_LEVEL=${MIMO_LOG_LEVEL:-info}
+      # Disable Git line-ending conversion inside the container
+      - GIT_CONFIG_NOSYSTEM=1
+      - HOME=/home/mimo
+      # Windows timezone mapping (adjust to your local timezone)
+      - TZ=${TZ:-America/Los_Angeles}
+
+    # Workaround: on some Windows Docker Desktop versions, healthcheck
+    # shell expansion can behave differently. Use explicit syntax.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9120/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
+
+  # ---------------------------------------------------------------------------
+  # Dashboard - Windows overrides
+  # ---------------------------------------------------------------------------
+  dashboard:
+    volumes:
+      - mimo_home_win:/home/mimo/.mimo
+      - mimo_workspace_win:/workspace
+
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - MIMO_API_HOST=0.0.0.0
+      - MIMO_API_PORT=9120
+      - MIMO_DASHBOARD_PORT=9119
+      - MIMO_LOG_LEVEL=${MIMO_LOG_LEVEL:-info}
+      - MIMO_MODE=dashboard
+      - GIT_CONFIG_NOSYSTEM=1
+      - HOME=/home/mimo
+      - TZ=${TZ:-America/Los_Angeles}
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9119/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
+
+# =============================================================================
+# Named volumes (Windows-specific names to avoid collision with Linux volumes)
+# =============================================================================
+volumes:
+  mimo_home_win:
+    name: mimo_home_win
+  mimo_workspace_win:
+    name: mimo_workspace_win

@@ -1,0 +1,72 @@
+# French (fr) - MIMO CLI Code Translations
+
+approval:
+  choose: "Choisir"
+  allowed: "Autorise"
+  denied: "Refuse"
+  allow_all: "Tout autoriser"
+  create_plan: "Creer un plan"
+  tool_approval_prompt: "Voulez-vous autoriser l'execution de cet outil ?"
+
+session:
+  new: "Nouvelle session"
+  cleared: "Session effacee"
+  saved: "Session sauvegardee"
+  resumed: "Session reprise"
+  forked: "Session dupliquee"
+  compressed: "Session compressee"
+  rolled_back: "Session restauree"
+
+mode:
+  plan: "Mode plan"
+  agent: "Mode agent"
+  yolo: "Mode YOLO"
+  switched: "Bascule en mode {mode}"
+
+errors:
+  api_key_invalid: "La cle API est invalide ou manquante. Veuillez verifier votre configuration."
+  rate_limit: "Limite de debit atteinte. Veuillez reessayer dans {retry} secondes."
+  timeout: "La requete a expire. Veuillez reessayer."
+  unknown: "Une erreur inconnue s'est produite."
+  network_error: "Erreur reseau. Veuillez verifier votre connexion internet."
+
+tools:
+  executing: "Execution de l'outil : {tool}"
+  completed: "Outil termine : {tool}"
+  failed: "Echec de l'outil : {tool}"
+  permission_denied: "Permission refusee pour l'outil : {tool}"
+
+memory:
+  saved: "Memoire sauvegardee"
+  loaded: "Memoire chargee"
+  searched: "Memoire recherchee"
+  exported: "Memoire exportee"
+  imported: "Memoire importee"
+
+skills:
+  matched: "Competence trouvee : {skill}"
+  loaded: "Competence chargee : {skill}"
+  none_matched: "Aucune competence correspondante trouvee"
+
+gateway:
+  connected: "Connecte au passerelle"
+  disconnected: "Deconnecte du passerelle"
+  message_received: "Message recu"
+  approval_expired: "Demande d'approbation expiree"
+
+config:
+  saved: "Configuration sauvegardee"
+  loaded: "Configuration chargee"
+  invalid: "Configuration invalide"
+  setup_required: "Configuration initiale requise. Executez `mimo init` pour commencer."
+
+general:
+  yes: "Oui"
+  no: "Non"
+  ok: "OK"
+  cancel: "Annuler"
+  loading: "Chargement..."
+  done: "Termine"
+  error: "Erreur"
+  warning: "Avertissement"
+  info: "Information"

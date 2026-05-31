@@ -1,0 +1,72 @@
+# Korean (ko) - MIMO CLI Code Translations
+
+approval:
+  choose: "선택"
+  allowed: "허용됨"
+  denied: "거부됨"
+  allow_all: "모두 허용"
+  create_plan: "계획 생성"
+  tool_approval_prompt: "이 도구의 실행을 허용하시겠습니까?"
+
+session:
+  new: "새 세션"
+  cleared: "세션 초기화됨"
+  saved: "세션 저장됨"
+  resumed: "세션 재개됨"
+  forked: "세션 포크됨"
+  compressed: "세션 압축됨"
+  rolled_back: "세션 롤백됨"
+
+mode:
+  plan: "계획 모드"
+  agent: "에이전트 모드"
+  yolo: "YOLO 모드"
+  switched: "{mode} 모드로 전환됨"
+
+errors:
+  api_key_invalid: "API 키가 유효하지 않거나 누락되었습니다. 설정을 확인해 주세요."
+  rate_limit: "요청 제한에 도달했습니다. {retry}초 후에 다시 시도해 주세요."
+  timeout: "요청 시간이 초과되었습니다. 다시 시도해 주세요."
+  unknown: "알 수 없는 오류가 발생했습니다."
+  network_error: "네트워크 오류입니다. 인터넷 연결을 확인해 주세요."
+
+tools:
+  executing: "도구 실행 중: {tool}"
+  completed: "도구 완료: {tool}"
+  failed: "도구 실패: {tool}"
+  permission_denied: "도구 권한 거부됨: {tool}"
+
+memory:
+  saved: "메모리 저장됨"
+  loaded: "메모리 로드됨"
+  searched: "메모리 검색됨"
+  exported: "메모리 내보내기 완료"
+  imported: "메모리 가져오기 완료"
+
+skills:
+  matched: "일치하는 스킬: {skill}"
+  loaded: "스킬 로드됨: {skill}"
+  none_matched: "일치하는 스킬을 찾을 수 없습니다"
+
+gateway:
+  connected: "게이트웨이에 연결됨"
+  disconnected: "게이트웨이 연결 해제됨"
+  message_received: "메시지 수신됨"
+  approval_expired: "승인 요청이 만료되었습니다"
+
+config:
+  saved: "설정 저장됨"
+  loaded: "설정 로드됨"
+  invalid: "잘못된 설정"
+  setup_required: "초기 설정이 필요합니다. `mimo init`을 실행하여 시작하세요."
+
+general:
+  yes: "예"
+  no: "아니오"
+  ok: "확인"
+  cancel: "취소"
+  loading: "로딩 중..."
+  done: "완료"
+  error: "오류"
+  warning: "경고"
+  info: "정보"

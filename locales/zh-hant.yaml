@@ -1,0 +1,72 @@
+# Chinese Traditional (zh-hant) - MIMO CLI Code Translations
+
+approval:
+  choose: "選擇"
+  allowed: "已允許"
+  denied: "已拒絕"
+  allow_all: "全部允許"
+  create_plan: "建立計畫"
+  tool_approval_prompt: "是否允許此工具執行？"
+
+session:
+  new: "新工作階段"
+  cleared: "工作階段已清除"
+  saved: "工作階段已儲存"
+  resumed: "工作階段已恢復"
+  forked: "工作階段已分叉"
+  compressed: "工作階段已壓縮"
+  rolled_back: "工作階段已回滾"
+
+mode:
+  plan: "計畫模式"
+  agent: "代理模式"
+  yolo: "YOLO 模式"
+  switched: "已切換至{mode}模式"
+
+errors:
+  api_key_invalid: "API 金鑰無效或遺失。請檢查您的設定。"
+  rate_limit: "已達速率限制。請在 {retry} 秒後重試。"
+  timeout: "請求逾時。請重試。"
+  unknown: "發生未知錯誤。"
+  network_error: "網路錯誤。請檢查您的網路連線。"
+
+tools:
+  executing: "正在執行工具：{tool}"
+  completed: "工具執行完成：{tool}"
+  failed: "工具執行失敗：{tool}"
+  permission_denied: "工具權限被拒絕：{tool}"
+
+memory:
+  saved: "記憶已儲存"
+  loaded: "記憶已載入"
+  searched: "記憶已搜尋"
+  exported: "記憶已匯出"
+  imported: "記憶已匯入"
+
+skills:
+  matched: "配對到技能：{skill}"
+  loaded: "已載入技能：{skill}"
+  none_matched: "未找到配對的技能"
+
+gateway:
+  connected: "已連線至閘道"
+  disconnected: "已中斷閘道連線"
+  message_received: "已收到訊息"
+  approval_expired: "核准請求已過期"
+
+config:
+  saved: "設定已儲存"
+  loaded: "設定已載入"
+  invalid: "設定無效"
+  setup_required: "需要進行初始設定。執行 `mimo init` 開始使用。"
+
+general:
+  yes: "是"
+  no: "否"
+  ok: "確定"
+  cancel: "取消"
+  loading: "載入中..."
+  done: "完成"
+  error: "錯誤"
+  warning: "警告"
+  info: "資訊"
