@@ -1600,6 +1600,19 @@ export class MimoAgent {
         const stats = this.apiClient.getUsageStats();
         const budget = this.apiClient.getBudgetInfo();
         printUsageStats(stats, budget);
+
+        // Rate limiter stats
+        try {
+          const { getGlobalRateLimiter } = require('../api/rate-limiter');
+          const rl = getGlobalRateLimiter();
+          const rlStats = rl.getStats();
+          const rlConfig = rl.getConfig();
+          console.log(`\n  ${ORANGE('Rate Limiter')}`);
+          console.log(`  Requests: ${rlStats.totalRequests} total, ${rlStats.total429s} rate-limited, ${rlStats.successRate}% success`);
+          console.log(`  Retries: ${rlStats.totalRetries}, Waits: ${rlStats.totalWaits} (${Math.round(rlStats.totalWaitMs / 1000)}s total)`);
+          console.log(`  Cooldown: level ${rlStats.cooldownLevel}, ${rlStats.cooldownActive ? `active (${Math.round(rlStats.cooldownRemainingMs / 1000)}s left)` : 'inactive'}`);
+          console.log(`  Config: ${rlConfig.requestsPerMinute} RPM, ${rlConfig.minIntervalMs}ms min interval, ${rlConfig.maxRetries} max retries`);
+        } catch { /* rate limiter stats are non-critical */ }
         break;
       }
 

@@ -1,9 +1,12 @@
-// ── Rate Limiter: Global request queue with 429 retry ───────
+// ── Rate Limiter: Global request queue with adaptive 429 retry ─
 // All API calls go through enqueue() — it waits for cooldown,
 // enforces intervals, and retries 429s automatically.
 //
 // Thread safety: wait() uses a promise-chain mutex so concurrent
 // enqueue() calls are serialized and never exceed the rate limit.
+//
+// Adaptive behavior: starts with short delays and increases only
+// when the proxy actually returns 429s. Resets on success.
 
 export interface RateLimiterConfig {
   requestsPerMinute: number;
@@ -15,12 +18,12 @@ export interface RateLimiterConfig {
 }
 
 const DEFAULT_CONFIG: RateLimiterConfig = {
-  requestsPerMinute: 12,
-  minIntervalMs: 2000,
-  cooldownBaseMs: 5000,
-  cooldownMaxMs: 120000,
-  cooldownMultiplier: 2,
-  maxRetries: 5,
+  requestsPerMinute: 20,
+  minIntervalMs: 500,
+  cooldownBaseMs: 2000,
+  cooldownMaxMs: 30000,
+  cooldownMultiplier: 1.5,
+  maxRetries: 3,
 };
 
 export class RateLimiter {
@@ -32,6 +35,8 @@ export class RateLimiter {
   private totalWaits: number = 0;
   private totalWaitMs: number = 0;
   private totalRetries: number = 0;
+  private totalRequests: number = 0;
+  private total429s: number = 0;
 
   // ── Mutex: serialize concurrent wait() calls ──
   private queueChain: Promise<void> = Promise.resolve();
@@ -51,8 +56,8 @@ export class RateLimiter {
     let lastError: any = null;
 
     for (let attempt = 0; attempt <= this.config.maxRetries; attempt++) {
-      // wait() is mutex-serialized — no two calls can pass the rate limit check simultaneously
       await this.wait();
+      this.totalRequests++;
 
       try {
         const result = await fn();
@@ -66,17 +71,18 @@ export class RateLimiter {
           throw err;
         }
 
+        this.total429s++;
+
         // Extract Retry-After header from the 429 response
         const retryAfterSec = this.extractRetryAfter(err);
         this.backoff(retryAfterSec && retryAfterSec > 0 ? retryAfterSec : undefined);
-        this.totalRetries++;
 
         if (attempt < this.config.maxRetries) {
-          // Notify caller about the retry
-          const cooldownMs = this.getRetryDelay(retryAfterSec);
-          options?.onRetry?.(attempt + 1, cooldownMs);
-          // The cooldown is already set by backoff() above.
-          // The next loop iteration's wait() will respect cooldownUntil — no extra sleep needed.
+          // The cooldown is set by backoff() above.
+          // The next loop iteration's wait() will respect cooldownUntil.
+          // Notify caller so they see the wait time.
+          const waitMs = this.cooldownUntil - Date.now();
+          options?.onRetry?.(attempt + 1, Math.max(0, waitMs));
         }
       }
     }
@@ -91,9 +97,7 @@ export class RateLimiter {
    * both passing the rate limit check before either records its timestamp.
    */
   async wait(): Promise<void> {
-    // Chain onto the previous wait — each call runs sequentially
     const myTurn = this.queueChain.then(() => this.doWait());
-    // Keep the chain alive even if this call throws
     this.queueChain = myTurn.catch(() => {});
     await myTurn;
   }
@@ -155,6 +159,7 @@ export class RateLimiter {
   }
 
   onSuccess(): void {
+    // Gradually reduce cooldown level on success (allows faster recovery)
     if (this.cooldownLevel > 0) {
       this.cooldownLevel = Math.max(0, this.cooldownLevel - 1);
     }
@@ -168,6 +173,9 @@ export class RateLimiter {
     totalWaitMs: number;
     cooldownLevel: number;
     totalRetries: number;
+    totalRequests: number;
+    total429s: number;
+    successRate: number;
   } {
     this.trimOldTimestamps();
     const now = Date.now();
@@ -179,6 +187,11 @@ export class RateLimiter {
       totalWaitMs: this.totalWaitMs,
       cooldownLevel: this.cooldownLevel,
       totalRetries: this.totalRetries,
+      totalRequests: this.totalRequests,
+      total429s: this.total429s,
+      successRate: this.totalRequests > 0
+        ? Math.round(((this.totalRequests - this.total429s) / this.totalRequests) * 100)
+        : 100,
     };
   }
 
