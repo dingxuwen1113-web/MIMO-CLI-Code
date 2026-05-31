@@ -238,8 +238,16 @@ export class TokenPlanAdapter implements ApiAdapter {
   }
 
   private checkBudget(): void {
-<<<<<<< HEAD
-    // No budget check in unlimited mode
+    if (this.monthlyBudget <= 0) return; // unlimited plan
+    const pct = (this.usedTokens / this.monthlyBudget) * 100;
+    if (pct >= 100) {
+      throw new Error(`Budget exhausted: ${this.usedTokens.toLocaleString()}/${this.monthlyBudget.toLocaleString()} tokens used this period. Upgrade your plan or wait for reset.`);
+    }
+    if (pct >= 90) {
+      console.error(`\x1b[31m[budget] WARNING: ${pct.toFixed(0)}% of monthly budget used (${this.usedTokens.toLocaleString()}/${this.monthlyBudget.toLocaleString()} tokens)\x1b[0m`);
+    } else if (pct >= 80) {
+      console.warn(`\x1b[33m[budget] ${pct.toFixed(0)}% of monthly budget used (${this.usedTokens.toLocaleString()}/${this.monthlyBudget.toLocaleString()} tokens)\x1b[0m`);
+    }
   }
 
   /**
@@ -290,18 +298,6 @@ export class TokenPlanAdapter implements ApiAdapter {
       req.write(body);
       req.end();
     });
-=======
-    if (this.monthlyBudget <= 0) return; // unlimited plan
-    const pct = (this.usedTokens / this.monthlyBudget) * 100;
-    if (pct >= 100) {
-      throw new Error(`Budget exhausted: ${this.usedTokens.toLocaleString()}/${this.monthlyBudget.toLocaleString()} tokens used this period. Upgrade your plan or wait for reset.`);
-    }
-    if (pct >= 90) {
-      console.error(`\x1b[31m[budget] WARNING: ${pct.toFixed(0)}% of monthly budget used (${this.usedTokens.toLocaleString()}/${this.monthlyBudget.toLocaleString()} tokens)\x1b[0m`);
-    } else if (pct >= 80) {
-      console.warn(`\x1b[33m[budget] ${pct.toFixed(0)}% of monthly budget used (${this.usedTokens.toLocaleString()}/${this.monthlyBudget.toLocaleString()} tokens)\x1b[0m`);
-    }
->>>>>>> origin/main
   }
 
   private trackUsage(usage: Anthropic.Usage): void {
