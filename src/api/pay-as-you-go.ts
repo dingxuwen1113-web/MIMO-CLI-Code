@@ -3,6 +3,7 @@ import createDebug from 'debug';
 import { MimoConfig } from '../config/schema';
 import { ApiAdapter, BudgetInfo, UsageStats, StreamCallbacks } from './types';
 import { getGlobalRateLimiter } from './rate-limiter';
+import { getSharedHttpAgents } from './http-client';
 
 const debug = createDebug('mimo:api');
 
@@ -27,10 +28,13 @@ export class PayAsYouGoAdapter implements ApiAdapter {
     this.config = config;
     const baseUrl = config.api.payAsYouGo.baseUrl;
 
+    const { httpAgent, httpsAgent } = getSharedHttpAgents();
     const clientOpts: Record<string, any> = {
       apiKey: config.api.payAsYouGo.apiKey,
       maxRetries: 0,
       timeout: 120_000,
+      httpAgent,
+      httpsAgent,
     };
     if (baseUrl) {
       clientOpts.baseURL = baseUrl;
@@ -81,7 +85,6 @@ export class PayAsYouGoAdapter implements ApiAdapter {
       this.trackUsage(model, response.usage);
       return response;
     } catch (err: any) {
-      // If pro model gets 429, auto-downgrade to mimo-v2.5 and retry
       if (err?.status === 429 && model === 'mimo-v2.5-pro') {
         debug('mimo-v2.5-pro got 429, downgrading to mimo-v2.5');
         createParams.model = 'mimo-v2.5';
@@ -133,19 +136,26 @@ export class PayAsYouGoAdapter implements ApiAdapter {
         let textEmitted = false;
         const stream = this.client.messages.stream(streamParams);
 
+        // Buffer thinking output — render once at block end, not per-delta
+        let thinkingBuffer = '';
+
         stream.on('text', (text) => {
           textEmitted = true;
           callbacks.onText?.(text);
         });
-        stream.on('thinking', (thinkingDelta: string, _snapshot: string) => {
-          callbacks.onThinking?.(thinkingDelta);
+
+        stream.on('thinking', (thinkingDelta: string) => {
+          thinkingBuffer += thinkingDelta;
         });
+
         stream.on('contentBlock', (block) => {
           if (block.type === 'tool_use') {
             callbacks.onToolUse?.(block as Anthropic.ToolUseBlock);
           }
-          if (block.type === 'thinking') {
-            callbacks.onThinking?.((block as any).thinking || '');
+          // Flush accumulated thinking when the block ends
+          if (block.type === 'thinking' && thinkingBuffer) {
+            callbacks.onThinking?.(thinkingBuffer);
+            thinkingBuffer = '';
           }
         });
 
