@@ -1,0 +1,72 @@
+# Hungarian (hu) - MIMO CLI Code Translations
+
+approval:
+  choose: "Kivalasztas"
+  allowed: "Engedelyezve"
+  denied: "Megtagadva"
+  allow_all: "Osszes engedelyezese"
+  create_plan: "Terv letrehozasa"
+  tool_approval_prompt: "Engedelyezi ennek az eszkoznek a futtatasat?"
+
+session:
+  new: "Uj munkamenet"
+  cleared: "Munkamenet torolve"
+  saved: "Munkamenet elmentve"
+  resumed: "Munkamenet folytatva"
+  forked: "Munkamenet elagaztatva"
+  compressed: "Munkamenet tomoritve"
+  rolled_back: "Munkamenet visszagorditve"
+
+mode:
+  plan: "Terv mod"
+  agent: "Ugynok mod"
+  yolo: "YOLO mod"
+  switched: "Valtas {mode} modra"
+
+errors:
+  api_key_invalid: "Az API kulcs ervenytelen vagy hianyzik. Keresse meg a beallitasait."
+  rate_limit: "Sebessegkorlat elerve. Probalja ujra {retry} masodperc mulva."
+  timeout: "A keres lejart. Kerem probalja ujra."
+  unknown: "Ismeretlen hiba tortent."
+  network_error: "Halozati hiba. Keresse meg az internetkapcsolatat."
+
+tools:
+  executing: "Eszkoz futtatasa: {tool}"
+  completed: "Eszkoz befejezve: {tool}"
+  failed: "Eszkoz sikertelen: {tool}"
+  permission_denied: "Engedely megtagadva az eszkoz szamara: {tool}"
+
+memory:
+  saved: "Memoria elmentve"
+  loaded: "Memoria betoltve"
+  searched: "Memoria megkeresve"
+  exported: "Memoria exportalva"
+  imported: "Memoria importalva"
+
+skills:
+  matched: "Egyezo keszseg: {skill}"
+  loaded: "Keszseg betoltve: {skill}"
+  none_matched: "Nem talalhato egyezo keszseg"
+
+gateway:
+  connected: "Csatlakozva az atjelzo szerverhez"
+  disconnected: "Bontva az atjelzo szerverrol"
+  message_received: "Uzenet erkezett"
+  approval_expired: "Jovahagyas kerelem lejart"
+
+config:
+  saved: "Beallitas elmentve"
+  loaded: "Beallitas betoltve"
+  invalid: "Ervenytelen beallitas"
+  setup_required: "Kezdeti beallitas szukseges. Futtassa a `mimo init` parancsot a kezdeshez."
+
+general:
+  yes: "Igen"
+  no: "Nem"
+  ok: "OK"
+  cancel: "Megse"
+  loading: "Betoltes..."
+  done: "Kesz"
+  error: "Hiba"
+  warning: "Figyelmeztetes"
+  info: "Informacio"

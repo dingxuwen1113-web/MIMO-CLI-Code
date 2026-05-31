@@ -1,0 +1,72 @@
+# Portuguese (pt) - MIMO CLI Code Translations
+
+approval:
+  choose: "Escolher"
+  allowed: "Permitido"
+  denied: "Negado"
+  allow_all: "Permitir tudo"
+  create_plan: "Criar plano"
+  tool_approval_prompt: "Deseja permitir que esta ferramenta seja executada?"
+
+session:
+  new: "Nova sessao"
+  cleared: "Sessao limpa"
+  saved: "Sessao salva"
+  resumed: "Sessao retomada"
+  forked: "Sessao bifurcada"
+  compressed: "Sessao comprimida"
+  rolled_back: "Sessao revertida"
+
+mode:
+  plan: "Modo plano"
+  agent: "Modo agente"
+  yolo: "Modo YOLO"
+  switched: "Alterado para o modo {mode}"
+
+errors:
+  api_key_invalid: "A chave de API e invalida ou ausente. Verifique sua configuracao."
+  rate_limit: "Limite de taxa atingido. Tente novamente em {retry} segundos."
+  timeout: "A requisicao expirou. Tente novamente."
+  unknown: "Ocorreu um erro desconhecido."
+  network_error: "Erro de rede. Verifique sua conexao com a internet."
+
+tools:
+  executing: "Executando ferramenta: {tool}"
+  completed: "Ferramenta concluida: {tool}"
+  failed: "Ferramenta falhou: {tool}"
+  permission_denied: "Permissao negada para a ferramenta: {tool}"
+
+memory:
+  saved: "Memoria salva"
+  loaded: "Memoria carregada"
+  searched: "Memoria pesquisada"
+  exported: "Memoria exportada"
+  imported: "Memoria importada"
+
+skills:
+  matched: "Habilidade encontrada: {skill}"
+  loaded: "Habilidade carregada: {skill}"
+  none_matched: "Nenhuma habilidade correspondente encontrada"
+
+gateway:
+  connected: "Conectado ao gateway"
+  disconnected: "Desconectado do gateway"
+  message_received: "Mensagem recebida"
+  approval_expired: "Solicitacao de aprovacao expirada"
+
+config:
+  saved: "Configuracao salva"
+  loaded: "Configuracao carregada"
+  invalid: "Configuracao invalida"
+  setup_required: "Configuracao inicial necessaria. Execute `mimo init` para comecar."
+
+general:
+  yes: "Sim"
+  no: "Nao"
+  ok: "OK"
+  cancel: "Cancelar"
+  loading: "Carregando..."
+  done: "Concluido"
+  error: "Erro"
+  warning: "Aviso"
+  info: "Informacao"

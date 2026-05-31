@@ -32,7 +32,7 @@ export class PayAsYouGoAdapter implements ApiAdapter {
     }
     this.client = new Anthropic(clientOpts as any);
     this.rateLimiter = new RateLimiter({
-      requestsPerMinute: 50,
+      requestsPerMinute: 500000000000,
       minIntervalMs: 800,
       cooldownBaseMs: 5000,
       cooldownMaxMs: 60000,

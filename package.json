@@ -1,7 +1,7 @@
 {
   "name": "mimo-cli-code",
-  "version": "1.0.0",
-  "description": "MIMO CLI Code - Xiaomi ",
+  "version": "2.0.0",
+  "description": "MIMO CLI Code - Xiaomi Terminal AI Coding Agent",
   "main": "dist/index.js",
   "exports": {
     ".": "./dist/index.js",
@@ -19,10 +19,17 @@
     "test:watch": "vitest",
     "clean": "rm -rf dist"
   },
-  "keywords": ["cli", "ai", "coding-agent", "anthropic", "claude"],
+  "keywords": [
+    "cli",
+    "ai",
+    "coding-agent",
+    "anthropic",
+    "claude"
+  ],
   "license": "MIT",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
+    "better-sqlite3": "^11.8.1",
     "chalk": "^5.4.1",
     "commander": "^12.1.0",
     "diff": "^7.0.0",
@@ -31,12 +38,14 @@
     "gray-matter": "^4.0.3",
     "ora": "^8.1.1",
     "toml": "^3.0.0",
+    "yaml": "^2.9.0",
     "zod": "^3.24.1"
   },
   "optionalDependencies": {
     "playwright": "^1.49.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
     "@types/diff": "^6.0.0",
     "@types/node": "^22.10.5",
     "@types/react": "^18.3.18",

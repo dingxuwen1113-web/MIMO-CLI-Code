@@ -1,0 +1,72 @@
+# Chinese Simplified (zh) - MIMO CLI Code Translations
+
+approval:
+  choose: "选择"
+  allowed: "已允许"
+  denied: "已拒绝"
+  allow_all: "全部允许"
+  create_plan: "创建计划"
+  tool_approval_prompt: "是否允许此工具运行？"
+
+session:
+  new: "新会话"
+  cleared: "会话已清除"
+  saved: "会话已保存"
+  resumed: "会话已恢复"
+  forked: "会话已分叉"
+  compressed: "会话已压缩"
+  rolled_back: "会话已回滚"
+
+mode:
+  plan: "计划模式"
+  agent: "代理模式"
+  yolo: "YOLO 模式"
+  switched: "已切换到{mode}模式"
+
+errors:
+  api_key_invalid: "API 密钥无效或缺失。请检查您的配置。"
+  rate_limit: "已达速率限制。请在 {retry} 秒后重试。"
+  timeout: "请求超时。请重试。"
+  unknown: "发生未知错误。"
+  network_error: "网络错误。请检查您的网络连接。"
+
+tools:
+  executing: "正在执行工具：{tool}"
+  completed: "工具执行完成：{tool}"
+  failed: "工具执行失败：{tool}"
+  permission_denied: "工具权限被拒绝：{tool}"
+
+memory:
+  saved: "记忆已保存"
+  loaded: "记忆已加载"
+  searched: "记忆已搜索"
+  exported: "记忆已导出"
+  imported: "记忆已导入"
+
+skills:
+  matched: "匹配到技能：{skill}"
+  loaded: "已加载技能：{skill}"
+  none_matched: "未找到匹配的技能"
+
+gateway:
+  connected: "已连接到网关"
+  disconnected: "已断开网关连接"
+  message_received: "已收到消息"
+  approval_expired: "审批请求已过期"
+
+config:
+  saved: "配置已保存"
+  loaded: "配置已加载"
+  invalid: "配置无效"
+  setup_required: "需要进行初始设置。运行 `mimo init` 开始使用。"
+
+general:
+  yes: "是"
+  no: "否"
+  ok: "确定"
+  cancel: "取消"
+  loading: "加载中..."
+  done: "完成"
+  error: "错误"
+  warning: "警告"
+  info: "信息"

@@ -1,0 +1,72 @@
+# Afrikaans (af) - MIMO CLI Code Translations
+
+approval:
+  choose: "Kies"
+  allowed: "Toegelaat"
+  denied: "Geweier"
+  allow_all: "Laat alles toe"
+  create_plan: "Skep plan"
+  tool_approval_prompt: "Wil u hierdie instrument toelaat om te loop?"
+
+session:
+  new: "Nuwe sessie"
+  cleared: "Sessie gewis"
+  saved: "Sessie gestoor"
+  resumed: "Sessie hervat"
+  forked: "Sessie vertak"
+  compressed: "Sessie saamgepers"
+  rolled_back: "Sessie teruggerol"
+
+mode:
+  plan: "Planmodus"
+  agent: "Agentmodus"
+  yolo: "YOLO-modus"
+  switched: "Gewissel na {mode}-modus"
+
+errors:
+  api_key_invalid: "API-sleutel is ongeldig of ontbreek. Kontroleer asseblief u konfigurasie."
+  rate_limit: "Tempolimiet bereik. Probeer asseblief weer oor {retry} sekondes."
+  timeout: "Versoek het verval. Probeer asseblief weer."
+  unknown: "'n Onbekende fout het voorgekom."
+  network_error: "Netwerkfout. Kontroleer asseblief u internetverbinding."
+
+tools:
+  executing: "Voer instrument uit: {tool}"
+  completed: "Instrument voltooi: {tool}"
+  failed: "Instrument het misluk: {tool}"
+  permission_denied: "Toegang geweier vir instrument: {tool}"
+
+memory:
+  saved: "Geheue gestoor"
+  loaded: "Geheue gelaai"
+  searched: "Geheue deursoek"
+  exported: "Geheue uitgevoer"
+  imported: "Geheue ingevoer"
+
+skills:
+  matched: "Passende vaardigheid gevind: {skill}"
+  loaded: "Vaardigheid gelaai: {skill}"
+  none_matched: "Geen passende vaardighede gevind nie"
+
+gateway:
+  connected: "Verbind met hekdiens"
+  disconnected: "Ontkoppel van hekdiens"
+  message_received: "Boodskap ontvang"
+  approval_expired: "Goedkeuringsversoek het verval"
+
+config:
+  saved: "Konfigurasie gestoor"
+  loaded: "Konfigurasie gelaai"
+  invalid: "Ongeldige konfigurasie"
+  setup_required: "Aanvanklike opstelling is nodig. Voer `mimo init` uit om te begin."
+
+general:
+  yes: "Ja"
+  no: "Nee"
+  ok: "OK"
+  cancel: "Kanselleer"
+  loading: "Laai tans..."
+  done: "Klaar"
+  error: "Fout"
+  warning: "Waarskuwing"
+  info: "Inligting"

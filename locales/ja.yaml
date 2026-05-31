@@ -1,0 +1,72 @@
+# Japanese (ja) - MIMO CLI Code Translations
+
+approval:
+  choose: "選択"
+  allowed: "許可済み"
+  denied: "拒否済み"
+  allow_all: "すべて許可"
+  create_plan: "プランを作成"
+  tool_approval_prompt: "このツールの実行を許可しますか？"
+
+session:
+  new: "新しいセッション"
+  cleared: "セッションをクリアしました"
+  saved: "セッションを保存しました"
+  resumed: "セッションを再開しました"
+  forked: "セッションをフォークしました"
+  compressed: "セッションを圧縮しました"
+  rolled_back: "セッションをロールバックしました"
+
+mode:
+  plan: "プランモード"
+  agent: "エージェントモード"
+  yolo: "YOLO モード"
+  switched: "{mode}モードに切り替えました"
+
+errors:
+  api_key_invalid: "APIキーが無効または未設定です。設定を確認してください。"
+  rate_limit: "レート制限に達しました。{retry}秒後に再試行してください。"
+  timeout: "リクエストがタイムアウトしました。もう一度お試しください。"
+  unknown: "不明なエラーが発生しました。"
+  network_error: "ネットワークエラーが発生しました。インターネット接続を確認してください。"
+
+tools:
+  executing: "ツール実行中：{tool}"
+  completed: "ツール完了：{tool}"
+  failed: "ツール失敗：{tool}"
+  permission_denied: "ツールの権限が拒否されました：{tool}"
+
+memory:
+  saved: "メモリを保存しました"
+  loaded: "メモリを読み込みました"
+  searched: "メモリを検索しました"
+  exported: "メモリをエクスポートしました"
+  imported: "メモリをインポートしました"
+
+skills:
+  matched: "スキルがマッチしました：{skill}"
+  loaded: "スキルを読み込みました：{skill}"
+  none_matched: "一致するスキルが見つかりません"
+
+gateway:
+  connected: "ゲートウェイに接続しました"
+  disconnected: "ゲートウェイから切断しました"
+  message_received: "メッセージを受信しました"
+  approval_expired: "承認リクエストが期限切れです"
+
+config:
+  saved: "設定を保存しました"
+  loaded: "設定を読み込みました"
+  invalid: "設定が無効です"
+  setup_required: "初期設定が必要です。`mimo init` を実行してください。"
+
+general:
+  yes: "はい"
+  no: "いいえ"
+  ok: "OK"
+  cancel: "キャンセル"
+  loading: "読み込み中..."
+  done: "完了"
+  error: "エラー"
+  warning: "警告"
+  info: "情報"

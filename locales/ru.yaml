@@ -1,0 +1,72 @@
+# Russian (ru) - MIMO CLI Code Translations
+
+approval:
+  choose: "Выбрать"
+  allowed: "Разрешено"
+  denied: "Отклонено"
+  allow_all: "Разрешить все"
+  create_plan: "Создать план"
+  tool_approval_prompt: "Разрешить выполнение этого инструмента?"
+
+session:
+  new: "Новая сессия"
+  cleared: "Сессия очищена"
+  saved: "Сессия сохранена"
+  resumed: "Сессия возобновлена"
+  forked: "Сессия разветвлена"
+  compressed: "Сессия сжата"
+  rolled_back: "Сессия откачена"
+
+mode:
+  plan: "Режим плана"
+  agent: "Режим агента"
+  yolo: "Режим YOLO"
+  switched: "Переключено в режим {mode}"
+
+errors:
+  api_key_invalid: "API-ключ недействителен или отсутствует. Пожалуйста, проверьте вашу конфигурацию."
+  rate_limit: "Достигнут лимит запросов. Пожалуйста, повторите через {retry} секунд."
+  timeout: "Время ожидания запроса истекло. Пожалуйста, попробуйте снова."
+  unknown: "Произошла неизвестная ошибка."
+  network_error: "Ошибка сети. Пожалуйста, проверьте ваше интернет-соединение."
+
+tools:
+  executing: "Выполнение инструмента: {tool}"
+  completed: "Инструмент завершен: {tool}"
+  failed: "Ошибка инструмента: {tool}"
+  permission_denied: "Доступ запрещен для инструмента: {tool}"
+
+memory:
+  saved: "Память сохранена"
+  loaded: "Память загружена"
+  searched: "Память просканирована"
+  exported: "Память экспортирована"
+  imported: "Память импортирована"
+
+skills:
+  matched: "Найден навык: {skill}"
+  loaded: "Навык загружен: {skill}"
+  none_matched: "Подходящие навыки не найдены"
+
+gateway:
+  connected: "Подключено к шлюзу"
+  disconnected: "Отключено от шлюза"
+  message_received: "Сообщение получено"
+  approval_expired: "Запрос на утверждение истек"
+
+config:
+  saved: "Конфигурация сохранена"
+  loaded: "Конфигурация загружена"
+  invalid: "Недействительная конфигурация"
+  setup_required: "Требуется начальная настройка. Запустите `mimo init` для начала."
+
+general:
+  yes: "Да"
+  no: "Нет"
+  ok: "OK"
+  cancel: "Отмена"
+  loading: "Загрузка..."
+  done: "Готово"
+  error: "Ошибка"
+  warning: "Предупреждение"
+  info: "Информация"

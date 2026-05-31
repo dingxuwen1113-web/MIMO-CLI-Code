@@ -1,0 +1,72 @@
+# Turkish (tr) - MIMO CLI Code Translations
+
+approval:
+  choose: "Sec"
+  allowed: "Izin verildi"
+  denied: "Reddedildi"
+  allow_all: "Tumune izin ver"
+  create_plan: "Plan olustur"
+  tool_approval_prompt: "Bu aracin calistirilmasina izin vermek istiyor musunuz?"
+
+session:
+  new: "Yeni oturum"
+  cleared: "Oturm temizlendi"
+  saved: "Oturum kaydedildi"
+  resumed: "Oturum devam ettirildi"
+  forked: "Oturum dallandirildi"
+  compressed: "Oturum sikistirildi"
+  rolled_back: "Oturum geri alindi"
+
+mode:
+  plan: "Plan modu"
+  agent: "Ajan modu"
+  yolo: "YOLO modu"
+  switched: "{mode} moduna gecildi"
+
+errors:
+  api_key_invalid: "API anahtari gecersiz veya eksik. Lutfen yapilandirmanizi kontrol edin."
+  rate_limit: "Hiz sinirina ulasildi. Lutfen {retry} saniye sonra tekrar deneyin."
+  timeout: "Istek zaman asimina ugradi. Lutfen tekrar deneyin."
+  unknown: "Bilinmeyen bir hata olustu."
+  network_error: "Ag hatasi. Lutfen internet baglantinizi kontrol edin."
+
+tools:
+  executing: "Arac calistiriliyor: {tool}"
+  completed: "Arac tamamlandi: {tool}"
+  failed: "Arac basarisiz oldu: {tool}"
+  permission_denied: "Arac icin izin reddedildi: {tool}"
+
+memory:
+  saved: "Bellek kaydedildi"
+  loaded: "Bellek yuklendi"
+  searched: "Bellek aranildi"
+  exported: "Bellek disa aktarildi"
+  imported: "Bellek iceri aktarildi"
+
+skills:
+  matched: "Eslesen beceri: {skill}"
+  loaded: "Yuklenen beceri: {skill}"
+  none_matched: "Eslesen beceri bulunamadi"
+
+gateway:
+  connected: "Agtewaye baglanildi"
+  disconnected: "Agteway baglantisi kesildi"
+  message_received: "Mesaj alindi"
+  approval_expired: "Onay istegi suresi doldu"
+
+config:
+  saved: "Yapilandirma kaydedildi"
+  loaded: "Yapilandirma yuklendi"
+  invalid: "Gecersiz yapilandirma"
+  setup_required: "Ilk kurulum gerekli. Baslamak icin `mimo init` komutunu calistirin."
+
+general:
+  yes: "Evet"
+  no: "Hayir"
+  ok: "Tamam"
+  cancel: "Iptal"
+  loading: "Yukleniyor..."
+  done: "Bitti"
+  error: "Hata"
+  warning: "Uyari"
+  info: "Bilgi"

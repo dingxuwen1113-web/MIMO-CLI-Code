@@ -1,0 +1,90 @@
+# =============================================================================
+# MIMO CLI Code - Docker Ignore
+# =============================================================================
+
+# Dependencies and build artifacts
+node_modules/
+dist/
+*.tgz
+*.tar.gz
+
+# Version control
+.git/
+.gitignore
+.gitattributes
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Documentation (not needed in image)
+*.md
+docs/
+LICENSE
+
+# Tests and test configuration
+test/
+tests/
+__tests__/
+**/*.test.ts
+**/*.spec.ts
+**/__tests__/
+vitest.config.ts
+jest.config.*
+coverage/
+.nyc_output/
+
+# Docker files (prevent recursive inclusion)
+Dockerfile
+Dockerfile.*
+docker-compose*.yml
+.dockerignore
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.circleci/
+Jenkinsfile
+
+# Environment and secrets (NEVER include in images)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.cert
+
+# Logs and temp files
+*.log
+logs/
+tmp/
+temp/
+.tmp/
+
+# OS-specific files
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# Build tools config (not needed at runtime)
+.eslintrc*
+.prettierrc*
+tslint.json
+tsconfig.tsbuildinfo
+
+# Package manager lock files alternative (only keep package-lock.json)
+yarn.lock
+pnpm-lock.yaml
+.bun-lockb
+
+# Misc
+CHANGELOG*
+CONTRIBUTING*
+SECURITY*

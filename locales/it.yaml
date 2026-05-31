@@ -1,0 +1,72 @@
+# Italian (it) - MIMO CLI Code Translations
+
+approval:
+  choose: "Scegli"
+  allowed: "Consentito"
+  denied: "Negato"
+  allow_all: "Consenti tutto"
+  create_plan: "Crea piano"
+  tool_approval_prompt: "Consenti l'esecuzione di questo strumento?"
+
+session:
+  new: "Nuova sessione"
+  cleared: "Sessione cancellata"
+  saved: "Sessione salvata"
+  resumed: "Sessione ripresa"
+  forked: "Sessione biforcata"
+  compressed: "Sessione compressa"
+  rolled_back: "Sessione ripristinata"
+
+mode:
+  plan: "Modalita piano"
+  agent: "Modalita agente"
+  yolo: "Modalita YOLO"
+  switched: "Passato alla modalita {mode}"
+
+errors:
+  api_key_invalid: "La chiave API non e valida o mancante. Controlla la tua configurazione."
+  rate_limit: "Limite di velocita raggiunto. Riprova tra {retry} secondi."
+  timeout: "Richiesta scaduta. Riprova."
+  unknown: "Si e verificato un errore sconosciuto."
+  network_error: "Errore di rete. Controlla la tua connessione internet."
+
+tools:
+  executing: "Esecuzione strumento: {tool}"
+  completed: "Strumento completato: {tool}"
+  failed: "Strumento fallito: {tool}"
+  permission_denied: "Permesso negato per lo strumento: {tool}"
+
+memory:
+  saved: "Memoria salvata"
+  loaded: "Memoria caricata"
+  searched: "Memoria cercata"
+  exported: "Memoria esportata"
+  imported: "Memoria importata"
+
+skills:
+  matched: "Abilita trovata: {skill}"
+  loaded: "Abilita caricata: {skill}"
+  none_matched: "Nessuna abilita corrispondente trovata"
+
+gateway:
+  connected: "Connesso al gateway"
+  disconnected: "Disconnesso dal gateway"
+  message_received: "Messaggio ricevuto"
+  approval_expired: "Richiesta di approvazione scaduta"
+
+config:
+  saved: "Configurazione salvata"
+  loaded: "Configurazione caricata"
+  invalid: "Configurazione non valida"
+  setup_required: "Configurazione iniziale necessaria. Esegui `mimo init` per iniziare."
+
+general:
+  yes: "Si"
+  no: "No"
+  ok: "OK"
+  cancel: "Annulla"
+  loading: "Caricamento..."
+  done: "Fatto"
+  error: "Errore"
+  warning: "Avviso"
+  info: "Informazione"
