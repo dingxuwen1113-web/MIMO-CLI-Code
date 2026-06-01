@@ -139,13 +139,19 @@ export async function loadConfig(cliOptions: any = {}): Promise<MimoConfig> {
     config.api.openaiEndpoint = process.env.OPENAI_BASE_URL;
   }
   if (process.env.ANTHROPIC_BASE_URL && process.env.ANTHROPIC_BASE_URL.trim()) {
-    // Only use env var if config file doesn't already have a baseUrl
-    if (!config.api.payAsYouGo.baseUrl) {
-      config.api.payAsYouGo.baseUrl = process.env.ANTHROPIC_BASE_URL;
+    const envUrl = process.env.ANTHROPIC_BASE_URL.trim().replace(/\/+$/, '');
+    // Config file (mimo init) takes priority for the active mode.
+    // Env var fills in when config has no baseUrl (user hasn't run mimo init yet).
+    const activeMode = config.api.mode;
+    if (activeMode === 'token-plan' && !config.api.tokenPlan.baseUrl) {
+      config.api.tokenPlan.baseUrl = envUrl;
     }
-    if (!config.api.tokenPlan.baseUrl) {
-      config.api.tokenPlan.baseUrl = process.env.ANTHROPIC_BASE_URL;
+    if (activeMode === 'pay-as-you-go' && !config.api.payAsYouGo.baseUrl) {
+      config.api.payAsYouGo.baseUrl = envUrl;
     }
+    // Always set the inactive mode if it has no baseUrl
+    if (!config.api.tokenPlan.baseUrl) config.api.tokenPlan.baseUrl = envUrl;
+    if (!config.api.payAsYouGo.baseUrl) config.api.payAsYouGo.baseUrl = envUrl;
   }
 
   // Validate the merged config and warn about issues

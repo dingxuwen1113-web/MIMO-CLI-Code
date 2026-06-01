@@ -108,13 +108,6 @@ export class SecurityAuditor {
         'Enable sandbox mode for safer command execution'));
     }
 
-    // Check rate limiting
-    if (ctx.config?.api?.rateLimit?.requestsPerMinute > 100) {
-      findings.push(this.finding('config', 'low', 'High rate limit',
-        'Rate limit is set above 100 RPM which may trigger API provider blocks',
-        'Consider lowering to 60 RPM or below'));
-    }
-
     return findings;
   }
 

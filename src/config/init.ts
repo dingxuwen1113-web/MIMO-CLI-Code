@@ -404,9 +404,10 @@ async function showCompletePage(result: SetupResult): Promise<void> {
 
 async function testConnection(apiKey: string, baseUrl: string): Promise<boolean> {
   process.stdout.write(GRAY('    测试 API 连接...'));
+  const normalizedUrl = baseUrl.replace(/\/+$/, '');
 
   try {
-    const response = await fetch(`${baseUrl}/v1/messages`, {
+    const response = await fetch(`${normalizedUrl}/v1/messages`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -502,15 +503,18 @@ export async function initConfig(): Promise<void> {
     }
 
     // 页面 4: Base URL
-    const baseUrl = await showBaseUrlPage(rl, apiMode);
+    let baseUrl = await showBaseUrlPage(rl, apiMode);
 
-    // URL format validation
-    if (baseUrl && !baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')) {
+    // URL format validation — re-prompt on invalid URL
+    while (baseUrl && !baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')) {
       console.log('');
       console.log(RED(`    ✖ 无效的 URL: ${baseUrl}`));
       console.log(GRAY('    URL 必须以 http:// 或 https:// 开头'));
       console.log('');
+      baseUrl = await showBaseUrlPage(rl, apiMode);
     }
+    // Normalize trailing slashes
+    if (baseUrl) baseUrl = baseUrl.replace(/\/+$/, '');
 
     // 连接测试
     if (apiKey) {
@@ -533,13 +537,13 @@ export async function initConfig(): Promise<void> {
         mode: apiMode as 'token-plan' | 'pay-as-you-go',
         model,
         tokenPlan: {
-          apiKey: apiKey,
-          baseUrl: baseUrl,
+          apiKey: apiMode === 'token-plan' ? apiKey : '',
+          baseUrl: apiMode === 'token-plan' ? baseUrl : '',
           monthlyBudget,
         },
         payAsYouGo: {
-          apiKey: apiKey,
-          baseUrl: baseUrl,
+          apiKey: apiMode === 'pay-as-you-go' ? apiKey : '',
+          baseUrl: apiMode === 'pay-as-you-go' ? baseUrl : '',
           maxTokensPerTurn: maxTokens,
         },
         stream: true,

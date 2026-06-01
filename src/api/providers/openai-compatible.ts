@@ -1,7 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import createDebug from 'debug';
 import { ApiAdapter, BudgetInfo, UsageStats, StreamCallbacks, OpenAICompatibleProviderConfig } from '../types';
-import { getGlobalRateLimiter } from '../rate-limiter';
 
 const debug = createDebug('mimo:api:openai');
 
@@ -68,8 +67,7 @@ export class OpenAICompatibleAdapter implements ApiAdapter {
       body.tools = openaiTools;
     }
 
-    const limiter = getGlobalRateLimiter();
-    const raw = await limiter.enqueue(() => this.rawFetch('/chat/completions', body));
+    const raw = await this.rawFetch('/chat/completions', body);
 
     const message = this.convertOpenAIResponseToAnthropic(raw, model);
     this.trackUsage(raw.usage);
@@ -99,10 +97,7 @@ export class OpenAICompatibleAdapter implements ApiAdapter {
       body.tools = openaiTools;
     }
 
-    const limiter = getGlobalRateLimiter();
-    const aggregated = await limiter.enqueue(() =>
-      this.rawStreamFetch('/chat/completions', body, callbacks)
-    );
+    const aggregated = await this.rawStreamFetch('/chat/completions', body, callbacks);
 
     const message = this.convertOpenAIStreamToAnthropic(aggregated, model);
     if (aggregated.usage) this.trackUsage(aggregated.usage);
@@ -357,7 +352,13 @@ export class OpenAICompatibleAdapter implements ApiAdapter {
     if (!response.ok) {
       const text = await response.text().catch(() => '(no body)');
       debug('OpenAI-compatible error %d: %s', response.status, text.slice(0, 200));
-      throw this.wrapApiError(response.status, text);
+      const err = this.wrapApiError(response.status, text);
+      // Pass Retry-After header to rate limiter
+      const retryAfter = response.headers?.get('retry-after');
+      if (retryAfter) {
+        (err as any).headers = { 'retry-after': retryAfter };
+      }
+      throw err;
     }
 
     return response.json();
@@ -380,7 +381,12 @@ export class OpenAICompatibleAdapter implements ApiAdapter {
     if (!response.ok) {
       const text = await response.text().catch(() => '(no body)');
       debug('OpenAI-compatible stream error %d: %s', response.status, text.slice(0, 200));
-      throw this.wrapApiError(response.status, text);
+      const err = this.wrapApiError(response.status, text);
+      const retryAfter = response.headers?.get('retry-after');
+      if (retryAfter) {
+        (err as any).headers = { 'retry-after': retryAfter };
+      }
+      throw err;
     }
 
     const reader = response.body?.getReader();
@@ -489,22 +495,24 @@ export class OpenAICompatibleAdapter implements ApiAdapter {
   }
 
   private wrapApiError(status: number, body: string): Error {
+    let err: Error;
     if (status === 401) {
-      return new Error('OpenAI-compatible API key is invalid or missing. Check your configuration.');
-    }
-    if (status === 404) {
-      return new Error(
+      err = new Error('OpenAI-compatible API key is invalid or missing. Check your configuration.');
+    } else if (status === 404) {
+      err = new Error(
         `OpenAI-compatible model not found. Verify the model name and that the server at ${this.baseUrl} supports it.`
       );
-    }
-    if (status === 429) {
-      return new Error('429_rate_limit: Rate limit exceeded on OpenAI-compatible endpoint.');
-    }
-    if (body.includes('ECONNREFUSED') || status === 0) {
-      return new Error(
+    } else if (status === 429) {
+      err = new Error('429_rate_limit: Rate limit exceeded on OpenAI-compatible endpoint.');
+    } else if (body.includes('ECONNREFUSED') || status === 0) {
+      err = new Error(
         `Cannot reach OpenAI-compatible API at ${this.baseUrl}. Check that the server is running and the URL is correct.`
       );
+    } else {
+      err = new Error(`OpenAI-compatible API error (${status}): ${body.slice(0, 200)}`);
     }
-    return new Error(`OpenAI-compatible API error (${status}): ${body.slice(0, 200)}`);
+    (err as any).status = status;
+    (err as any).statusCode = status;
+    return err;
   }
 }

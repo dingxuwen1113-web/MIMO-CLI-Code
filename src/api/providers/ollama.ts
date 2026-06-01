@@ -1,7 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import createDebug from 'debug';
 import { ApiAdapter, BudgetInfo, UsageStats, StreamCallbacks, OllamaProviderConfig } from '../types';
-import { getGlobalRateLimiter } from '../rate-limiter';
 
 const debug = createDebug('mimo:api:ollama');
 
@@ -60,8 +59,7 @@ export class OllamaAdapter implements ApiAdapter {
       body.tools = ollamaTools;
     }
 
-    const limiter = getGlobalRateLimiter();
-    const raw = await limiter.enqueue(() => this.rawFetch('/api/chat', body));
+    const raw = await this.rawFetch('/api/chat', body);
 
     const message = this.convertOllamaResponseToAnthropic(raw, model);
     this.trackUsage(raw);
@@ -89,8 +87,7 @@ export class OllamaAdapter implements ApiAdapter {
       body.tools = ollamaTools;
     }
 
-    const limiter = getGlobalRateLimiter();
-    const aggregated = await limiter.enqueue(() => this.rawStreamFetch('/api/chat', body, callbacks));
+    const aggregated = await this.rawStreamFetch('/api/chat', body, callbacks);
 
     const message = this.convertOllamaResponseToAnthropic(aggregated, model);
     this.trackUsage(aggregated);
@@ -372,16 +369,22 @@ export class OllamaAdapter implements ApiAdapter {
   }
 
   private wrapOllamaError(status: number, body: string): Error {
+    let err: Error;
     if (status === 404) {
-      return new Error(
+      err = new Error(
         `Ollama model not found. Ensure the model is pulled: ollama pull ${this.model}`
       );
-    }
-    if (body.includes('ECONNREFUSED') || status === 0) {
-      return new Error(
+    } else if (status === 429) {
+      err = new Error('429_rate_limit: Rate limit exceeded on Ollama endpoint.');
+    } else if (body.includes('ECONNREFUSED') || status === 0) {
+      err = new Error(
         `Cannot reach Ollama at ${this.baseUrl}. Is Ollama running? Start it with: ollama serve`
       );
+    } else {
+      err = new Error(`Ollama API error (${status}): ${body.slice(0, 200)}`);
     }
-    return new Error(`Ollama API error (${status}): ${body.slice(0, 200)}`);
+    (err as any).status = status;
+    (err as any).statusCode = status;
+    return err;
   }
 }
