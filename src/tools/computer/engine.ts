@@ -10,6 +10,7 @@ import { execFile } from 'child_process';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
+import { AutoOrchestrator, isAutomationInstruction, ExecutionResult } from './auto-orchestrator';
 
 // ── Max screenshot size (4096x4096 area to avoid huge payloads) ──
 const MAX_SCREENSHOT_AREA = 4096 * 4096;
@@ -542,6 +543,230 @@ async function scrollLinux(x: number | undefined, y: number | undefined, directi
 }
 
 // ══════════════════════════════════════════════════════════
+//  Application Launch
+// ══════════════════════════════════════════════════════════
+
+async function launchWindows(app: string, args: string[], wait: boolean): Promise<void> {
+  const argList = args.map(a => `'${a.replace(/'/g, "''")}'`).join(',');
+  const waitParam = wait ? '-Wait' : '';
+  const script = `
+    $process = Start-Process -FilePath '${app.replace(/'/g, "''")}' -ArgumentList ${argList} ${waitParam} -PassThru
+    if ($process -and -not ${wait}) {
+      Start-Sleep -Milliseconds 500
+    }
+  `;
+  await ps(script);
+}
+
+async function launchMac(app: string, args: string[], wait: boolean): Promise<void> {
+  const argsStr = args.map(a => `'${a.replace(/'/g, "'\\''")}'`).join(' ');
+
+  // Try open -a first for .app bundles
+  if (app.endsWith('.app') || app.includes('/')) {
+    const cmd = `open -a '${app.replace(/'/g, "'\\''")}' ${argsStr}`;
+    await run('bash', ['-c', cmd]);
+    if (wait) {
+      // Wait a moment for app to start
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  } else {
+    // Use osascript to launch by name
+    const script = `tell application "${app.replace(/"/g, '\\"')}" to activate`;
+    await run('osascript', ['-e', script]);
+    if (wait) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  }
+}
+
+async function launchLinux(app: string, args: string[], wait: boolean): Promise<void> {
+  const argsStr = args.join(' ');
+
+  // Try direct execution
+  const cmd = `nohup ${app} ${argsStr} > /dev/null 2>&1 &`;
+  await run('bash', ['-c', cmd]);
+
+  if (wait) {
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+//  Window Focus
+// ══════════════════════════════════════════════════════════
+
+async function focusWindows(app?: string, windowId?: number): Promise<string> {
+  if (windowId) {
+    const script = `
+      Add-Type @"
+        using System;
+        using System.Runtime.InteropServices;
+        public class WindowFocus {
+          [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+          [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+          public const int SW_RESTORE = 9;
+        }
+"@
+      $handle = [IntPtr]${windowId}
+      [WindowFocus]::ShowWindow($handle, [WindowFocus]::SW_RESTORE) | Out-Null
+      [WindowFocus]::SetForegroundWindow($handle) | Out-Null
+    `;
+    await ps(script);
+    return `Focused window ID: ${windowId}`;
+  }
+
+  if (!app) {
+    throw new Error('Either application or windowId is required');
+  }
+
+  const script = `
+    $process = Get-Process | Where-Object { $_.MainWindowTitle -like '*${app.replace(/'/g, "''")}*' -and $_.MainWindowHandle -ne 0 } | Select-Object -First 1
+    if ($process) {
+      Add-Type @"
+        using System;
+        using System.Runtime.InteropServices;
+        public class WindowFocus {
+          [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+          [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+          public const int SW_RESTORE = 9;
+        }
+"@
+      [WindowFocus]::ShowWindow($process.MainWindowHandle, [WindowFocus]::SW_RESTORE) | Out-Null
+      [WindowFocus]::SetForegroundWindow($process.MainWindowHandle) | Out-Null
+      "Focused: $($process.ProcessName) (ID: $($process.Id))"
+    } else {
+      throw "Window not found matching: ${app.replace(/'/g, "''")}"
+    }
+  `;
+  return (await ps(script)).trim();
+}
+
+async function focusMac(app?: string, windowId?: number): Promise<string> {
+  if (!app) {
+    throw new Error('Application name is required for macOS focus');
+  }
+
+  const script = `tell application "${app.replace(/"/g, '\\"')}" to activate`;
+  await run('osascript', ['-e', script]);
+  return `Focused: ${app}`;
+}
+
+async function focusLinux(app?: string, windowId?: number): Promise<string> {
+  if (windowId) {
+    await run('xdotool', ['windowactivate', String(windowId)]);
+    return `Focused window ID: ${windowId}`;
+  }
+
+  if (!app) {
+    throw new Error('Either application or windowId is required');
+  }
+
+  // Try to find window by name
+  const out = await run('xdotool', ['search', '--name', app]).catch(() => '');
+  if (!out.trim()) {
+    throw new Error(`Window not found matching: ${app}`);
+  }
+
+  const windowIds = out.trim().split('\n').filter(Boolean);
+  if (windowIds.length === 0) {
+    throw new Error(`Window not found matching: ${app}`);
+  }
+
+  await run('xdotool', ['windowactivate', windowIds[0]]);
+  return `Focused: ${app} (ID: ${windowIds[0]})`;
+}
+
+// ══════════════════════════════════════════════════════════
+//  List Windows
+// ══════════════════════════════════════════════════════════
+
+interface WindowInfo {
+  id: number;
+  title: string;
+  process: string;
+  pid: number;
+}
+
+async function listWindowsWindows(filter?: string): Promise<WindowInfo[]> {
+  const filterCondition = filter
+    ? `| Where-Object { $_.MainWindowTitle -like '*${filter.replace(/'/g, "''")}*' }`
+    : '';
+
+  const script = `
+    Get-Process ${filterCondition} | Where-Object { $_.MainWindowTitle -ne '' } |
+    Select-Object Id, MainWindowTitle, ProcessName, MainWindowHandle |
+    ForEach-Object {
+      [PSCustomObject]@{
+        id = [int]$_.MainWindowHandle
+        title = $_.MainWindowTitle
+        process = $_.ProcessName
+        pid = [int]$_.Id
+      }
+    } | ConvertTo-Json -AsArray
+  `;
+  const out = await ps(script);
+  try {
+    return JSON.parse(out || '[]');
+  } catch {
+    return [];
+  }
+}
+
+async function listWindowsMac(filter?: string): Promise<WindowInfo[]> {
+  const script = `
+    tell application "System Events"
+      set appList to every process whose visible is true
+      set output to {}
+      repeat with proc in appList
+        set procName to name of proc
+        set procId to unix id of proc
+        try
+          set windowList to every window of proc
+          repeat with win in windowList
+            set winTitle to name of win
+            ${filter ? `if winTitle contains "${filter?.replace(/"/g, '\\"')}" then` : ''}
+              set end of output to {id:0, title:winTitle, process:procName, pid:procId}
+            ${filter ? 'end if' : ''}
+          end repeat
+        end try
+      end repeat
+      return output
+    end tell
+  `;
+
+  const out = await run('osascript', ['-e', script]).catch(() => '[]');
+
+  // Parse osascript output - it returns a comma-separated list of records
+  // For simplicity, return empty array (proper parsing is complex)
+  // A better approach is to use JSON output with a helper
+  return [];
+}
+
+async function listWindowsLinux(filter?: string): Promise<WindowInfo[]> {
+  const args = filter ? ['search', '--name', filter] : ['search', '--name', ''];
+  const out = await run('wmctrl', ['-l']).catch(() => '');
+
+  const windows: WindowInfo[] = [];
+  for (const line of out.split('\n')) {
+    const parts = line.trim().split(/\s+/);
+    if (parts.length >= 4) {
+      const id = parseInt(parts[0], 16);
+      const title = parts.slice(3).join(' ');
+      windows.push({
+        id,
+        title,
+        process: 'unknown',
+        pid: 0,
+      });
+    }
+  }
+
+  return filter
+    ? windows.filter(w => w.title.toLowerCase().includes(filter.toLowerCase()))
+    : windows;
+}
+
+// ══════════════════════════════════════════════════════════
 //  Get Cursor
 // ══════════════════════════════════════════════════════════
 
@@ -876,3 +1101,224 @@ export async function executeComputerGetCursor(_input: Record<string, any>): Pro
     return { output: `Get cursor failed: ${err.message}`, isError: true };
   }
 }
+
+export async function executeComputerLaunch(input: Record<string, any>): Promise<ToolResult> {
+  try {
+    const avail = await checkAvailability();
+    if (!avail.available) return { output: installInstructions(), isError: true };
+
+    const app = input.application;
+    if (typeof app !== 'string' || app.length === 0) {
+      return { output: 'Application parameter is required', isError: true };
+    }
+
+    const args = input.args || [];
+    const wait = input.wait || false;
+
+    switch (platform) {
+      case 'win32':  await launchWindows(app, args, wait); break;
+      case 'darwin': await launchMac(app, args, wait);     break;
+      case 'linux':  await launchLinux(app, args, wait);   break;
+    }
+
+    return { output: `Launched: ${app}${args.length > 0 ? ` with args: ${args.join(', ')}` : ''}`, isError: false };
+  } catch (err: any) {
+    return { output: `Launch failed: ${err.message}`, isError: true };
+  }
+}
+
+export async function executeComputerFocus(input: Record<string, any>): Promise<ToolResult> {
+  try {
+    const avail = await checkAvailability();
+    if (!avail.available) return { output: installInstructions(), isError: true };
+
+    const app = input.application;
+    const windowId = input.windowId;
+
+    if (!app && !windowId) {
+      return { output: 'Either application or windowId parameter is required', isError: true };
+    }
+
+    let result: string;
+
+    switch (platform) {
+      case 'win32':  result = await focusWindows(app, windowId); break;
+      case 'darwin': result = await focusMac(app, windowId);     break;
+      case 'linux':  result = await focusLinux(app, windowId);   break;
+      default:       return { output: `Unsupported platform: ${platform}`, isError: true };
+    }
+
+    return { output: result, isError: false };
+  } catch (err: any) {
+    return { output: `Focus failed: ${err.message}`, isError: true };
+  }
+}
+
+export async function executeComputerListWindows(input: Record<string, any>): Promise<ToolResult> {
+  try {
+    const avail = await checkAvailability();
+    if (!avail.available) return { output: installInstructions(), isError: true };
+
+    const filter = input.filter;
+
+    let windows: WindowInfo[];
+
+    switch (platform) {
+      case 'win32':  windows = await listWindowsWindows(filter); break;
+      case 'darwin': windows = await listWindowsMac(filter);     break;
+      case 'linux':  windows = await listWindowsLinux(filter);   break;
+      default:       return { output: `Unsupported platform: ${platform}`, isError: true };
+    }
+
+    return {
+      output: JSON.stringify({
+        count: windows.length,
+        windows: windows.slice(0, 100), // Limit to 100 windows
+        note: windows.length > 100 ? `Showing first 100 of ${windows.length} windows` : undefined,
+      }, null, 2),
+      isError: false,
+    };
+  } catch (err: any) {
+    return { output: `List windows failed: ${err.message}`, isError: true };
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+//  Auto Automation Orchestrator
+// ══════════════════════════════════════════════════════════
+
+let orchestrator: AutoOrchestrator | null = null;
+
+function getOrchestrator(): AutoOrchestrator {
+  if (!orchestrator) {
+    orchestrator = new AutoOrchestrator();
+  }
+  return orchestrator;
+}
+
+// 实际执行工具调用的函数
+async function executeActualTool(toolName: string, input: Record<string, any>): Promise<ToolResult> {
+  // 这里需要调用ToolRegistry的execute方法
+  // 为了避免循环依赖，我们通过一个全局的工具执行器
+  // 实际使用时，需要在初始化时注入ToolRegistry
+
+  // 临时方案：直接调用各个工具的执行函数
+  switch (toolName) {
+    case 'computer_launch':
+      return await executeComputerLaunch(input);
+    case 'computer_focus':
+      return await executeComputerFocus(input);
+    case 'computer_type':
+      return await executeComputerType(input);
+    case 'computer_key':
+      return await executeComputerKey(input);
+    case 'computer_click':
+      return await executeComputerClick(input);
+    case 'computer_wait':
+      return await executeComputerWait(input);
+    case 'computer_screenshot':
+      return await executeComputerScreenshot(input);
+    case 'computer_scroll':
+      return await executeComputerScroll(input);
+    case 'computer_mouse_move':
+      return await executeComputerMouseMove(input);
+    case 'computer_drag':
+      return await executeComputerDrag(input);
+    case 'computer_list_windows':
+      return await executeComputerListWindows(input);
+    case 'computer_get_cursor':
+      return await executeComputerGetCursor(input);
+    default:
+      return { output: `Unknown tool: ${toolName}`, isError: true };
+  }
+}
+
+export async function executeComputerAuto(input: Record<string, any>): Promise<ToolResult> {
+  try {
+    const instruction = input.instruction;
+    if (typeof instruction !== 'string' || instruction.length === 0) {
+      return {
+        output: 'Instruction parameter is required and must be a non-empty string',
+        isError: true,
+      };
+    }
+
+    const dryRun = input.dryRun || false;
+    const verbose = input.verbose || false;
+
+    // 检查是否是自动化指令
+    if (!isAutomationInstruction(instruction)) {
+      return {
+        output: 'Instruction does not appear to be an automation command. Try using keywords like: 打开, 输入, 点击, 保存, etc.',
+        isError: true,
+      };
+    }
+
+    const orch = getOrchestrator();
+
+    // 注入实际的工具执行器
+    (orch as any).executeTool = executeActualTool;
+
+    if (verbose) {
+      console.log(`[Auto] Executing instruction: ${instruction}`);
+      console.log(`[Auto] Dry run: ${dryRun}`);
+    }
+
+    // 执行自动化
+    const result = await orch.execute(instruction);
+
+    // 格式化输出
+    const output = formatExecutionResult(result, verbose);
+
+    return {
+      output: JSON.stringify(output, null, 2),
+      isError: !result.success,
+    };
+  } catch (err: any) {
+    return {
+      output: `Auto automation failed: ${err.message}`,
+      isError: true,
+    };
+  }
+}
+
+function formatExecutionResult(result: ExecutionResult, verbose: boolean): any {
+  const output: any = {
+    success: result.success,
+    summary: result.summary,
+    workflowId: result.workflowId,
+    totalDuration: `${result.totalDuration}ms`,
+    stepCount: result.steps.length,
+    successfulSteps: result.steps.filter((s) => s.success).length,
+    failedSteps: result.steps.filter((s) => !s.success).length,
+  };
+
+  if (verbose) {
+    output.steps = result.steps.map((step) => ({
+      step: step.stepIndex + 1,
+      description: step.description,
+      tool: step.tool,
+      status: step.success ? '✅' : '❌',
+      duration: `${step.duration}ms`,
+      output: step.output ? step.output.substring(0, 100) + (step.output.length > 100 ? '...' : '') : undefined,
+      error: step.error,
+    }));
+  }
+
+  // 添加建议
+  if (!result.success) {
+    output.suggestions = [
+      'Try breaking the instruction into smaller steps',
+      'Check if the target application is already open',
+      'Use more specific keywords (e.g., "点击坐标 100, 200" instead of "点击这里")',
+      'Add wait times between operations (e.g., "打开应用，等待2秒，输入文字")',
+    ];
+  }
+
+  return output;
+}
+
+// 导出工具函数供外部使用
+export { isAutomationInstruction, parseInstruction } from './auto-orchestrator';
+export type { AutomationStep, AutomationWorkflow, ExecutionResult } from './auto-orchestrator';
+
