@@ -7,12 +7,16 @@ import createDebug from 'debug';
 const debug = createDebug('mimo:features:devex');
 
 // ══════════════════════════════════════════════════════
-// Feature 16: Code Archaeology Mode
+// Feature 16: Code Archaeology Mode (Enhanced)
 // ══════════════════════════════════════════════════════
 interface BlameEntry { line: number; author: string; date: string; commit: string; content: string; }
 interface FileHistory { commits: Array<{ hash: string; date: string; author: string; message: string; linesChanged: number }>; }
+interface CodeOwnership { author: string; lines: number; percentage: number; lastCommit: string; }
+interface CodeHotspot { line: number; changeCount: number; authors: string[]; complexity: number; }
 
 class CodeArchaeology {
+  private hotspotCache: Map<string, CodeHotspot[]> = new Map();
+
   async blame(filePath: string, range?: string): Promise<BlameEntry[]> {
     debug('Running git blame on %s (range=%s)', filePath, range || 'full');
     const args = range ? `-L ${range}` : '';
@@ -48,31 +52,157 @@ class CodeArchaeology {
     return { commits };
   }
 
-  async whoOwns(filePath: string): Promise<{ author: string; lines: number; percentage: number }[]> {
+  async whoOwns(filePath: string): Promise<CodeOwnership[]> {
     debug('Analyzing ownership for %s', filePath);
     const result = await runCommand(`git blame --line-porcelain "${filePath}" | grep "^author " | sort | uniq -c | sort -rn`, undefined, 15000);
     const lines = result.stdout.split('\n').filter(l => l.trim());
     const totalLines = lines.reduce((sum, l) => sum + parseInt(l.trim()) || 0, 0);
+
     return lines.map(l => {
       const match = l.trim().match(/(\d+)\s+author\s+(.+)/);
       const count = parseInt(match?.[1] || '0');
-      return { author: match?.[2] || 'unknown', lines: count, percentage: totalLines > 0 ? Math.round((count / totalLines) * 100) : 0 };
+      return {
+        author: match?.[2] || 'unknown',
+        lines: count,
+        percentage: totalLines > 0 ? Math.round((count / totalLines) * 100) : 0,
+        lastCommit: '',
+      };
     }).filter(e => e.author !== 'unknown');
+  }
+
+  async identifyHotspots(filePath: string): Promise<CodeHotspot[]> {
+    if (this.hotspotCache.has(filePath)) return this.hotspotCache.get(filePath)!;
+
+    const hotspots: CodeHotspot[] = [];
+    const result = await runCommand(`git log --oneline --follow -- "${filePath}"`, undefined, 10000);
+    const commits = result.stdout.split('\n').filter(l => l.trim());
+
+    const lineChangeCounts = new Map<number, { count: number; authors: Set<string> }>();
+
+    for (const commit of commits.slice(0, 100)) {
+      const hash = commit.split(' ')[0];
+      const diffResult = await runCommand(`git diff --unified=0 ${hash}~1 ${hash} -- "${filePath}"`, undefined, 5000);
+      const diffLines = diffResult.stdout.split('\n');
+
+      for (const line of diffLines) {
+        const match = line.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+        if (match) {
+          const lineNum = parseInt(match[1]);
+          const existing = lineChangeCounts.get(lineNum) || { count: 0, authors: new Set() };
+          existing.count++;
+          lineChangeCounts.set(lineNum, existing);
+        }
+      }
+    }
+
+    for (const [line, data] of lineChangeCounts) {
+      hotspots.push({
+        line,
+        changeCount: data.count,
+        authors: Array.from(data.authors),
+        complexity: 0,
+      });
+    }
+
+    hotspots.sort((a, b) => b.changeCount - a.changeCount);
+    this.hotspotCache.set(filePath, hotspots.slice(0, 20));
+    return hotspots.slice(0, 20);
+  }
+
+  async analyzeEvolution(filePath: string): Promise<{ period: string; changes: number; authors: string[] }[]> {
+    const result = await runCommand(`git log --format="%ai" --follow -- "${filePath}"`, undefined, 10000);
+    const dates = result.stdout.split('\n').filter(l => l.trim());
+
+    const periodMap = new Map<string, { changes: number; authors: Set<string> }>();
+    for (const date of dates) {
+      const yearMonth = date.slice(0, 7);
+      const existing = periodMap.get(yearMonth) || { changes: 0, authors: new Set() };
+      existing.changes++;
+      periodMap.set(yearMonth, existing);
+    }
+
+    return Array.from(periodMap.entries()).map(([period, data]) => ({
+      period,
+      changes: data.changes,
+      authors: Array.from(data.authors),
+    })).reverse();
   }
 }
 
 const archaeology = new CodeArchaeology();
 
 export const CodeArchaeologyFeature: FeatureModule = {
-  meta: { id: 'code-archaeology', name: 'Code Archaeology Mode', description: 'Interactive code history exploration with blame, history, and ownership', category: 'devex', enabled: true, priority: 'P1', maturity: 'stable' },
+  meta: { id: 'code-archaeology', name: 'Code Archaeology Mode', description: 'Interactive code history exploration with blame, history, ownership, and hotspot analysis', category: 'devex', enabled: true, priority: 'P1', maturity: 'stable' },
   getTools() {
     return [
-      { name: 'code_blame', definition: { name: 'code_blame', description: 'View detailed git blame with author and date info', input_schema: { type: 'object' as const, properties: { file: { type: 'string' }, range: { type: 'string', description: 'Line range e.g. "10,50"' } }, required: ['file'] } },
-        execute: async (input: any) => { const entries = await archaeology.blame(input.file, input.range); return { output: entries.slice(0, 30).map(e => `L${e.line} [${e.author} ${e.date}] ${e.content.slice(0, 60)}`).join('\n') || '(no blame data)', isError: false }; } },
-      { name: 'file_history', definition: { name: 'file_history', description: 'View file evolution history with commits', input_schema: { type: 'object' as const, properties: { file: { type: 'string' }, limit: { type: 'number' } }, required: ['file'] } },
-        execute: async (input: any) => { const h = await archaeology.fileHistory(input.file, input.limit); return { output: h.commits.map(c => `${c.hash} ${c.message}`).join('\n') || '(no history)', isError: false }; } },
-      { name: 'code_ownership', definition: { name: 'code_ownership', description: 'Analyze who owns which parts of a file', input_schema: { type: 'object' as const, properties: { file: { type: 'string' } }, required: ['file'] } },
-        execute: async (input: any) => { const owners = await archaeology.whoOwns(input.file); return { output: owners.map(o => `${o.author}: ${o.lines} lines (${o.percentage}%)`).join('\n') || '(no ownership data)', isError: false }; } },
+      {
+        name: 'code_blame',
+        definition: {
+          name: 'code_blame',
+          description: 'View detailed git blame with author and date info',
+          input_schema: { type: 'object' as const, properties: { file: { type: 'string' }, range: { type: 'string', description: 'Line range e.g. "10,50"' } }, required: ['file'] },
+        },
+        execute: async (input: any) => {
+          const entries = await archaeology.blame(input.file, input.range);
+          return {
+            output: entries.length > 0
+              ? entries.slice(0, 30).map(e => `L${e.line} [${e.author} ${e.date}] ${e.content.slice(0, 60)}`).join('\n')
+              : '(no blame data)',
+            isError: false,
+          };
+        },
+      },
+      {
+        name: 'file_history',
+        definition: {
+          name: 'file_history',
+          description: 'View file evolution history with commits',
+          input_schema: { type: 'object' as const, properties: { file: { type: 'string' }, limit: { type: 'number' } }, required: ['file'] },
+        },
+        execute: async (input: any) => {
+          const h = await archaeology.fileHistory(input.file, input.limit);
+          return {
+            output: h.commits.length > 0
+              ? h.commits.map(c => `${c.hash} ${c.message}`).join('\n')
+              : '(no history)',
+            isError: false,
+          };
+        },
+      },
+      {
+        name: 'code_ownership',
+        definition: {
+          name: 'code_ownership',
+          description: 'Analyze who owns which parts of a file',
+          input_schema: { type: 'object' as const, properties: { file: { type: 'string' } }, required: ['file'] },
+        },
+        execute: async (input: any) => {
+          const owners = await archaeology.whoOwns(input.file);
+          return {
+            output: owners.length > 0
+              ? owners.map(o => `${o.author}: ${o.lines} lines (${o.percentage}%)`).join('\n')
+              : '(no ownership data)',
+            isError: false,
+          };
+        },
+      },
+      {
+        name: 'code_hotspots',
+        definition: {
+          name: 'code_hotspots',
+          description: 'Identify frequently changed code sections (hotspots)',
+          input_schema: { type: 'object' as const, properties: { file: { type: 'string' } }, required: ['file'] },
+        },
+        execute: async (input: any) => {
+          const hotspots = await archaeology.identifyHotspots(input.file);
+          return {
+            output: hotspots.length > 0
+              ? hotspots.slice(0, 10).map(h => `L${h.line}: ${h.changeCount} changes`).join('\n')
+              : '(no hotspots found)',
+            isError: false,
+          };
+        },
+      },
     ];
   },
 };

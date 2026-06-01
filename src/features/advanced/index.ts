@@ -6,12 +6,26 @@ import * as fs from 'fs/promises';
 import createDebug from 'debug';
 const debug = createDebug('mimo:features:advanced');
 
-// ═══ Feature 35: Cost Predictor ══════════════════════
+// ═══ Feature 35: Cost Predictor (Enhanced with Detailed Analytics) ══════════════════════
+interface CostBreakdown {
+  inputCost: number;
+  outputCost: number;
+  totalCost: number;
+  tokensSaved: number;
+  efficiency: number;
+  recommendations: string[];
+}
+
 class CostPredictor {
   private pricing: Record<string, { input: number; output: number }> = {
     'mimo-v2.5-pro': { input: 3, output: 15 },
     'mimo-v2.5': { input: 0.25, output: 1.25 },
+    'mimo-v2.5-turbo': { input: 0.5, output: 2.5 },
   };
+
+  private sessionCosts: CostBreakdown[] = [];
+  private totalSessionCost = 0;
+  private cacheHitRate = 0;
 
   estimate(inputTokens: number, outputTokens: number, model: string): number {
     const p = this.pricing[model] || this.pricing['mimo-v2.5-pro'];
@@ -24,22 +38,143 @@ class CostPredictor {
     const inputTokens = messages.reduce((sum, m) => sum + estimateTokens(m.content), 0);
     return { inputTokens, estimatedCost: this.estimate(inputTokens, estimatedOutput, model) };
   }
+
+  estimateWithCache(inputTokens: number, outputTokens: number, model: string, cacheHitRate: number): CostBreakdown {
+    const p = this.pricing[model] || this.pricing['mimo-v2.5-pro'];
+    const baseInputCost = (inputTokens / 1_000_000) * p.input;
+    const outputCost = (outputTokens / 1_000_000) * p.output;
+
+    // Cache hit saves 90% of input cost
+    const cachedInputCost = baseInputCost * (1 - cacheHitRate * 0.9);
+    const totalCost = cachedInputCost + outputCost;
+    const tokensSaved = Math.floor(inputTokens * cacheHitRate * 0.9);
+
+    const efficiency = cacheHitRate > 0.5 ? 'high' : cacheHitRate > 0.2 ? 'medium' : 'low';
+
+    const recommendations: string[] = [];
+    if (cacheHitRate < 0.3) recommendations.push('Increase context caching for better efficiency');
+    if (outputTokens > inputTokens * 2) recommendations.push('Output tokens are high - consider more concise prompts');
+    if (inputTokens > 100000) recommendations.push('Large input detected - consider chunking or summarization');
+
+    return {
+      inputCost: cachedInputCost,
+      outputCost,
+      totalCost,
+      tokensSaved,
+      efficiency: cacheHitRate,
+      recommendations,
+    };
+  }
+
+  trackSessionCost(breakdown: CostBreakdown): void {
+    this.sessionCosts.push(breakdown);
+    this.totalSessionCost += breakdown.totalCost;
+    this.cacheHitRate = breakdown.efficiency;
+  }
+
+  getSessionSummary(): { totalCost: number; avgCost: number; cacheEfficiency: number; recommendations: string[] } {
+    const avgCost = this.sessionCosts.length > 0 ? this.totalSessionCost / this.sessionCosts.length : 0;
+    const recommendations: string[] = [];
+
+    if (this.totalSessionCost > 10) recommendations.push('Consider using a more cost-effective model');
+    if (this.cacheHitRate < 0.3) recommendations.push('Improve context caching to reduce costs');
+
+    return {
+      totalCost: this.totalSessionCost,
+      avgCost,
+      cacheEfficiency: this.cacheHitRate,
+      recommendations,
+    };
+  }
+
+  getPricing(): Record<string, { input: number; output: number }> { return this.pricing; }
 }
 
 const costPredictor = new CostPredictor();
 
 export const CostPredictorFeature: FeatureModule = {
-  meta: { id: 'cost-predictor', name: 'Cost Predictor', description: 'Estimate token cost before executing operations', category: 'performance', enabled: true, priority: 'P0', maturity: 'stable' },
+  meta: { id: 'cost-predictor', name: 'Cost Predictor', description: 'Estimate and track token costs with detailed analytics and optimization suggestions', category: 'performance', enabled: true, priority: 'P0', maturity: 'stable' },
   getTools() {
-    return [{
-      name: 'estimate_cost',
-      definition: { name: 'estimate_cost', description: 'Estimate the token cost of an operation', input_schema: { type: 'object' as const, properties: { text: { type: 'string' }, model: { type: 'string' } }, required: ['text'] } },
-      execute: async (input: any) => {
-        const tokens = estimateTokens(input.text);
-        const cost = costPredictor.estimate(tokens, 2000, input.model || 'mimo-v2.5-pro');
-        return { output: `Estimated: ${tokens} input tokens, ~$${cost.toFixed(4)} (${input.model || 'mimo-v2.5-pro'})`, isError: false };
+    return [
+      {
+        name: 'estimate_cost',
+        definition: {
+          name: 'estimate_cost',
+          description: 'Estimate the token cost of an operation',
+          input_schema: {
+            type: 'object' as const,
+            properties: {
+              text: { type: 'string' },
+              model: { type: 'string' },
+              outputTokens: { type: 'number', description: 'Expected output tokens' },
+              cacheHitRate: { type: 'number', description: 'Cache hit rate (0-1)' },
+            },
+            required: ['text'],
+          },
+        },
+        execute: async (input: any) => {
+          const tokens = estimateTokens(input.text);
+          const outputTokens = input.outputTokens || 2000;
+          const cacheHitRate = input.cacheHitRate || 0;
+
+          if (cacheHitRate > 0) {
+            const breakdown = costPredictor.estimateWithCache(tokens, outputTokens, input.model || 'mimo-v2.5-pro', cacheHitRate);
+            return {
+              output: `Cost Breakdown:\n` +
+                `Input: $${breakdown.inputCost.toFixed(4)} (${tokens} tokens)\n` +
+                `Output: $${breakdown.outputCost.toFixed(4)} (${outputTokens} tokens)\n` +
+                `Total: $${breakdown.totalCost.toFixed(4)}\n` +
+                `Cache Savings: ${breakdown.tokensSaved} tokens\n` +
+                `Efficiency: ${(breakdown.efficiency * 100).toFixed(0)}%\n\n` +
+                `Recommendations:\n${breakdown.recommendations.map(r => `  - ${r}`).join('\n')}`,
+              isError: false,
+            };
+          }
+
+          const cost = costPredictor.estimate(tokens, outputTokens, input.model || 'mimo-v2.5-pro');
+          return {
+            output: `Estimated: ${tokens} input tokens, ${outputTokens} output tokens\n` +
+              `Model: ${input.model || 'mimo-v2.5-pro'}\n` +
+              `Cost: $${cost.toFixed(4)}`,
+            isError: false,
+          };
+        },
       },
-    }];
+      {
+        name: 'session_cost',
+        definition: {
+          name: 'session_cost',
+          description: 'View session cost summary and recommendations',
+          input_schema: { type: 'object' as const, properties: {} },
+        },
+        execute: async () => {
+          const summary = costPredictor.getSessionSummary();
+          return {
+            output: `Session Cost Summary:\n` +
+              `Total Cost: $${summary.totalCost.toFixed(4)}\n` +
+              `Average Cost per Operation: $${summary.avgCost.toFixed(4)}\n` +
+              `Cache Efficiency: ${(summary.cacheEfficiency * 100).toFixed(0)}%\n\n` +
+              `Recommendations:\n${summary.recommendations.map(r => `  - ${r}`).join('\n')}`,
+            isError: false,
+          };
+        },
+      },
+      {
+        name: 'cost_pricing',
+        definition: {
+          name: 'cost_pricing',
+          description: 'View model pricing information',
+          input_schema: { type: 'object' as const, properties: {} },
+        },
+        execute: async () => {
+          const pricing = costPredictor.getPricing();
+          return {
+            output: `Model Pricing (per 1M tokens):\n${Object.entries(pricing).map(([model, p]) => `${model}: Input $${p.input}, Output $${p.output}`).join('\n')}`,
+            isError: false,
+          };
+        },
+      },
+    ];
   },
 };
 
@@ -208,23 +343,224 @@ export const BatchOptimizerFeature: FeatureModule = {
   },
 };
 
-// ═══ Feature 41: Real-time Threat Modeling ═══════════
+// ═══ Feature 41: Real-time Threat Modeling (Enhanced with STRIDE Analysis) ═══════════
+interface Threat {
+  category: 'spoofing' | 'tampering' | 'repudiation' | 'info-disclosure' | 'denial-of-service' | 'elevation';
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  description: string;
+  location: string;
+  mitigation: string;
+  confidence: number;
+}
+
+class ThreatAnalyzer {
+  private threatPatterns: Map<string, RegExp[]> = new Map();
+  private mitigationStrategies: Map<string, string> = new Map();
+
+  constructor() {
+    this.initializePatterns();
+    this.initializeMitigations();
+  }
+
+  private initializePatterns() {
+    // Spoofing patterns
+    this.threatPatterns.set('spoofing', [
+      /auth|login|password|token|jwt|session|credential/i,
+      /verify|validate|authenticate|authorize/i,
+      /cookie|header|bearer/i,
+    ]);
+
+    // Tampering patterns
+    this.threatPatterns.set('tampering', [
+      /modify|update|delete|write|insert|alter/i,
+      /input|request|params|body|query/i,
+      /sanitize|escape|validate|filter/i,
+    ]);
+
+    // Info Disclosure patterns
+    this.threatPatterns.set('info-disclosure', [
+      /read|select|get|find|query|fetch|load/i,
+      /log|debug|trace|dump|print|console/i,
+      /error|exception|stack|trace/i,
+      /response|send|return|output/i,
+    ]);
+
+    // DoS patterns
+    this.threatPatterns.set('denial-of-service', [
+      /rate|limit|throttle|quota|timeout/i,
+      /api|endpoint|route|handler|controller/i,
+      /loop|recursion|while|for.*while/i,
+      /memory|buffer|stack|heap/i,
+    ]);
+
+    // Elevation patterns
+    this.threatPatterns.set('elevation', [
+      /privilege|role|permission|admin|superuser|root/i,
+      /grant|revoke|elevate|escalate/i,
+      /rbac|acl|access.control/i,
+      /sudo|su|runas/i,
+    ]);
+  }
+
+  private initializeMitigations() {
+    this.mitigationStrategies.set('spoofing', 'Implement multi-factor authentication, use secure session management, validate credentials against database');
+    this.mitigationStrategies.set('tampering', 'Implement input validation, use parameterized queries, enable CSRF protection');
+    this.mitigationStrategies.set('info-disclosure', 'Implement proper error handling, use logging frameworks, avoid exposing stack traces');
+    this.mitigationStrategies.set('denial-of-service', 'Implement rate limiting, use caching, set appropriate timeouts');
+    this.mitigationStrategies.set('elevation', 'Implement RBAC, use principle of least privilege, audit permission changes');
+  }
+
+  analyzeCode(code: string, filePath: string): Threat[] {
+    const threats: Threat[] = [];
+    const lines = code.split('\n');
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const lineNum = i + 1;
+
+      // Check for spoofing threats
+      if (this.matchesPatterns(line, this.threatPatterns.get('spoofing') || [])) {
+        if (/password|token|jwt|credential/i.test(line) && !/encrypt|hash|bcrypt|scrypt/i.test(line)) {
+          threats.push({
+            category: 'spoofing',
+            severity: 'high',
+            description: 'Credential handling without encryption',
+            location: `${filePath}:${lineNum}`,
+            mitigation: 'Use bcrypt/scrypt for password hashing, encrypt tokens at rest',
+            confidence: 0.8,
+          });
+        }
+      }
+
+      // Check for tampering threats
+      if (this.matchesPatterns(line, this.threatPatterns.get('tampering') || [])) {
+        if (/input|request|params|body/i.test(line) && !/sanitize|validate|escape|filter/i.test(line)) {
+          threats.push({
+            category: 'tampering',
+            severity: 'medium',
+            description: 'Data modification without input validation',
+            location: `${filePath}:${lineNum}`,
+            mitigation: 'Validate and sanitize all user input, use parameterized queries',
+            confidence: 0.7,
+          });
+        }
+      }
+
+      // Check for info disclosure threats
+      if (this.matchesPatterns(line, this.threatPatterns.get('info-disclosure') || [])) {
+        if (/console\.(log|debug|error)|debug\(|trace\(/i.test(line)) {
+          threats.push({
+            category: 'info-disclosure',
+            severity: 'medium',
+            description: 'Logging statements may expose sensitive data',
+            location: `${filePath}:${lineNum}`,
+            mitigation: 'Use structured logging with data masking, avoid logging sensitive data',
+            confidence: 0.6,
+          });
+        }
+      }
+
+      // Check for DoS threats
+      if (this.matchesPatterns(line, this.threatPatterns.get('denial-of-service') || [])) {
+        if (/api|endpoint|route|handler/i.test(line) && !/rate|limit|throttle/i.test(line)) {
+          threats.push({
+            category: 'denial-of-service',
+            severity: 'high',
+            description: 'API endpoint without rate limiting',
+            location: `${filePath}:${lineNum}`,
+            mitigation: 'Implement rate limiting, use API gateway with throttling',
+            confidence: 0.75,
+          });
+        }
+      }
+
+      // Check for elevation threats
+      if (this.matchesPatterns(line, this.threatPatterns.get('elevation') || [])) {
+        if (/admin|superuser|root|sudo/i.test(line) && !/check|verify|validate/i.test(line)) {
+          threats.push({
+            category: 'elevation',
+            severity: 'critical',
+            description: 'Privilege escalation without proper checks',
+            location: `${filePath}:${lineNum}`,
+            mitigation: 'Implement RBAC, check permissions before elevation, audit changes',
+            confidence: 0.85,
+          });
+        }
+      }
+    }
+
+    return threats;
+  }
+
+  private matchesPatterns(text: string, patterns: RegExp[]): boolean {
+    return patterns.some(pattern => pattern.test(text));
+  }
+
+  getMitigation(category: string): string {
+    return this.mitigationStrategies.get(category) || 'No specific mitigation available';
+  }
+
+  getSummary(threats: Threat[]): { critical: number; high: number; medium: number; low: number; byCategory: Record<string, number> } {
+    const counts = { critical: 0, high: 0, medium: 0, low: 0 };
+    const byCategory: Record<string, number> = {};
+
+    for (const threat of threats) {
+      counts[threat.severity]++;
+      byCategory[threat.category] = (byCategory[threat.category] || 0) + 1;
+    }
+
+    return { ...counts, byCategory };
+  }
+}
+
+const threatAnalyzer = new ThreatAnalyzer();
+
 export const ThreatModelingFeature: FeatureModule = {
-  meta: { id: 'threat-modeling', name: 'Real-time Threat Modeling', description: 'STRIDE analysis on auth/crypto code changes', category: 'security', enabled: true, priority: 'P2', maturity: 'beta' },
+  meta: { id: 'threat-modeling', name: 'Real-time Threat Modeling', description: 'STRIDE analysis with comprehensive threat detection and mitigation strategies', category: 'security', enabled: true, priority: 'P2', maturity: 'beta' },
   getTools() {
     return [{
       name: 'threat_model',
-      definition: { name: 'threat_model', description: 'Analyze code for security threats using STRIDE model', input_schema: { type: 'object' as const, properties: { code: { type: 'string' }, file: { type: 'string' } }, required: ['code'] } },
+      definition: {
+        name: 'threat_model',
+        description: 'Analyze code for security threats using STRIDE model',
+        input_schema: {
+          type: 'object' as const,
+          properties: {
+            code: { type: 'string' },
+            file: { type: 'string' },
+            summary: { type: 'boolean', description: 'Get summary instead of details' },
+          },
+          required: ['code'],
+        },
+      },
       execute: async (input: any) => {
         debug('Tool: threat_model called (%d chars of code)', input.code?.length || 0);
-        const threats: string[] = [];
-        const code = input.code;
-        if (/auth|login|password|token/i.test(code)) threats.push('SPOOFING: Authentication-related code — verify identity validation');
-        if (/modify|update|delete|write/i.test(code)) threats.push('TAMPERING: Data modification — verify input validation');
-        if (/read|select|get|find/i.test(code)) threats.push('INFO DISCLOSURE: Data access — verify authorization checks');
-        if (/rate|limit|throttle/i.test(code) === false && /api|endpoint|route/i.test(code)) threats.push('DOS: API endpoint without rate limiting');
-        if (/privilege|role|permission|admin/i.test(code)) threats.push('ELEVATION: Privilege-related — verify RBAC enforcement');
-        return { output: threats.length > 0 ? `STRIDE Threat Analysis:\n${threats.map(t => `⚠ ${t}`).join('\n')}` : 'No obvious threats detected ✓', isError: false };
+        const threats = threatAnalyzer.analyzeCode(input.code, input.file || 'unknown');
+
+        if (input.summary) {
+          const summary = threatAnalyzer.getSummary(threats);
+          return {
+            output: `Threat Summary:\n` +
+              `Critical: ${summary.critical}\n` +
+              `High: ${summary.high}\n` +
+              `Medium: ${summary.medium}\n` +
+              `Low: ${summary.low}\n\n` +
+              `By Category:\n${Object.entries(summary.byCategory).map(([cat, count]) => `  ${cat}: ${count}`).join('\n')}`,
+            isError: false,
+          };
+        }
+
+        return {
+          output: threats.length > 0
+            ? `STRIDE Threat Analysis:\n${threats.map(t =>
+              `${t.severity === 'critical' ? '🔴' : t.severity === 'high' ? '🟡' : '🟢'} [${t.category.toUpperCase()}] ${t.description}\n` +
+              `  Location: ${t.location}\n` +
+              `  Mitigation: ${t.mitigation}\n` +
+              `  Confidence: ${(t.confidence * 100).toFixed(0)}%`
+            ).join('\n\n')}`
+            : 'No obvious threats detected ✓',
+          isError: false,
+        };
       },
     }];
   },
@@ -250,30 +586,181 @@ export const ComplianceCheckerFeature: FeatureModule = {
   },
 };
 
-// ═══ Feature 43: Secret Leak Prevention ══════════════
+// ═══ Feature 43: Secret Leak Prevention (Enhanced with Advanced Detection) ══════════════
+interface SecretFinding {
+  type: 'api-key' | 'token' | 'password' | 'private-key' | 'credential' | 'connection-string';
+  severity: 'critical' | 'high' | 'medium';
+  pattern: string;
+  match: string;
+  location: string;
+  recommendation: string;
+}
+
+class SecretScanner {
+  private patterns: Array<{ regex: RegExp; name: string; type: SecretFinding['type']; severity: SecretFinding['severity'] }> = [];
+  private falsePositivePatterns: RegExp[] = [];
+
+  constructor() {
+    this.initializePatterns();
+    this.initializeFalsePositives();
+  }
+
+  private initializePatterns() {
+    // API Keys
+    this.patterns.push({ regex: /sk-ant-[\w-]{20,}/g, name: 'Anthropic API Key', type: 'api-key', severity: 'critical' });
+    this.patterns.push({ regex: /sk-[\w]{20,}/g, name: 'OpenAI API Key', type: 'api-key', severity: 'critical' });
+    this.patterns.push({ regex: /ghp_[\w]{30,}/g, name: 'GitHub Token', type: 'token', severity: 'critical' });
+    this.patterns.push({ regex: /AKIA[\w]{16}/g, name: 'AWS Access Key', type: 'api-key', severity: 'critical' });
+    this.patterns.push({ regex: /AIza[\w-]{35}/g, name: 'Google API Key', type: 'api-key', severity: 'critical' });
+
+    // Tokens
+    this.patterns.push({ regex: /eyJ[\w-]+\.eyJ[\w-]+\.[\w-]+/g, name: 'JWT Token', type: 'token', severity: 'high' });
+    this.patterns.push({ regex: /(?:Bearer|bearer)\s+[A-Za-z0-9-._~+/]+=*/g, name: 'Bearer Token', type: 'token', severity: 'high' });
+
+    // Private Keys
+    this.patterns.push({ regex: /-----BEGIN.*PRIVATE KEY-----/g, name: 'Private Key', type: 'private-key', severity: 'critical' });
+    this.patterns.push({ regex: /-----BEGIN.*RSA PRIVATE KEY-----/g, name: 'RSA Private Key', type: 'private-key', severity: 'critical' });
+
+    // Passwords
+    this.patterns.push({ regex: /(?:password|passwd|pwd)\s*[:=]\s*["'][^"']{8,}["']/gi, name: 'Password', type: 'password', severity: 'critical' });
+    this.patterns.push({ regex: /(?:secret|secret_key)\s*[:=]\s*["'][^"']{8,}["']/gi, name: 'Secret', type: 'password', severity: 'critical' });
+
+    // Connection Strings
+    this.patterns.push({ regex: /(?:mongodb|mysql|postgres|redis):\/\/[^\s@]+@[^\s]+/gi, name: 'Database Connection String', type: 'connection-string', severity: 'critical' });
+    this.patterns.push({ regex: /(?:AccountKey|SharedAccessKey)=[A-Za-z0-9+/=]{20,}/gi, name: 'Azure Storage Key', type: 'api-key', severity: 'critical' });
+  }
+
+  private initializeFalsePositives() {
+    this.falsePositivePatterns = [
+      /example/i,
+      /placeholder/i,
+      /test/i,
+      /mock/i,
+      /fake/i,
+      /dummy/i,
+      /YOUR_/i,
+      /REPLACE/i,
+      /\*\*\*/,  // Masked values
+    ];
+  }
+
+  scanCode(code: string, filePath: string): SecretFinding[] {
+    const findings: SecretFinding[] = [];
+    const lines = code.split('\n');
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const lineNum = i + 1;
+
+      for (const pattern of this.patterns) {
+        const matches = line.match(pattern.regex);
+        if (matches) {
+          for (const match of matches) {
+            // Check for false positives
+            if (this.isFalsePositive(match)) continue;
+
+            const finding: SecretFinding = {
+              type: pattern.type,
+              severity: pattern.severity,
+              pattern: pattern.name,
+              match: this.maskSecret(match),
+              location: `${filePath}:${lineNum}`,
+              recommendation: this.getRecommendation(pattern.type),
+            };
+
+            findings.push(finding);
+          }
+        }
+      }
+    }
+
+    return findings;
+  }
+
+  private isFalsePositive(match: string): boolean {
+    return this.falsePositivePatterns.some(pattern => pattern.test(match));
+  }
+
+  private maskSecret(secret: string): string {
+    if (secret.length <= 8) return '***';
+    return secret.slice(0, 4) + '***' + secret.slice(-4);
+  }
+
+  private getRecommendation(type: SecretFinding['type']): string {
+    const recommendations: Record<string, string> = {
+      'api-key': 'Store in environment variables or secret management system',
+      'token': 'Rotate token immediately, use short-lived tokens',
+      'password': 'Use password hashing (bcrypt/scrypt), never store plain text',
+      'private-key': 'Store in secure key vault, rotate immediately',
+      'credential': 'Use credential management service',
+      'connection-string': 'Use environment variables, implement credential rotation',
+    };
+    return recommendations[type] || 'Remove secret from code, use secure storage';
+  }
+
+  getSummary(findings: SecretFinding[]): { critical: number; high: number; medium: number; byType: Record<string, number>; affectedFiles: Set<string> } {
+    const counts = { critical: 0, high: 0, medium: 0 };
+    const byType: Record<string, number> = {};
+    const affectedFiles = new Set<string>();
+
+    for (const finding of findings) {
+      counts[finding.severity]++;
+      byType[finding.type] = (byType[finding.type] || 0) + 1;
+      affectedFiles.add(finding.location.split(':')[0]);
+    }
+
+    return { ...counts, byType, affectedFiles };
+  }
+}
+
+const secretScanner = new SecretScanner();
+
 export const SecretLeakFeature: FeatureModule = {
-  meta: { id: 'secret-leak', name: 'Secret Leak Prevention', description: 'Scan diffs/commits/PRs for secrets', category: 'security', enabled: true, priority: 'P0', maturity: 'stable' },
+  meta: { id: 'secret-leak', name: 'Secret Leak Prevention', description: 'Scan diffs/commits/PRs for secrets with advanced detection and false positive filtering', category: 'security', enabled: true, priority: 'P0', maturity: 'stable' },
   getTools() {
     return [{
       name: 'scan_secrets',
-      definition: { name: 'scan_secrets', description: 'Scan code for hardcoded secrets and credentials', input_schema: { type: 'object' as const, properties: { code: { type: 'string' }, file: { type: 'string' } }, required: ['code'] } },
+      definition: {
+        name: 'scan_secrets',
+        description: 'Scan code for hardcoded secrets and credentials',
+        input_schema: {
+          type: 'object' as const,
+          properties: {
+            code: { type: 'string' },
+            file: { type: 'string' },
+            summary: { type: 'boolean', description: 'Get summary instead of details' },
+          },
+          required: ['code'],
+        },
+      },
       execute: async (input: any) => {
         debug('Tool: scan_secrets called (%d chars)', input.code?.length || 0);
-        const findings: string[] = [];
-        const patterns = [
-          { pattern: /sk-ant-[\w-]{20,}/g, name: 'Anthropic API Key' },
-          { pattern: /sk-[\w]{20,}/g, name: 'OpenAI API Key' },
-          { pattern: /ghp_[\w]{30,}/g, name: 'GitHub Token' },
-          { pattern: /AKIA[\w]{16}/g, name: 'AWS Access Key' },
-          { pattern: /(?:password|secret|token|api.?key)\s*[:=]\s*["'][^"']{8,}["']/gi, name: 'Hardcoded credential' },
-          { pattern: /-----BEGIN.*PRIVATE KEY-----/g, name: 'Private Key' },
-          { pattern: /eyJ[\w-]+\.eyJ[\w-]+\.[\w-]+/g, name: 'JWT Token' },
-        ];
-        for (const { pattern, name } of patterns) {
-          const matches = input.code.match(pattern);
-          if (matches) findings.push(`⚠ ${name}: ${matches[0].slice(0, 30)}...`);
+        const findings = secretScanner.scanCode(input.code, input.file || 'unknown');
+
+        if (input.summary) {
+          const summary = secretScanner.getSummary(findings);
+          return {
+            output: `Secret Scan Summary:\n` +
+              `Critical: ${summary.critical}\n` +
+              `High: ${summary.high}\n` +
+              `Medium: ${summary.medium}\n` +
+              `Affected Files: ${summary.affectedFiles.size}\n\n` +
+              `By Type:\n${Object.entries(summary.byType).map(([type, count]) => `  ${type}: ${count}`).join('\n')}`,
+            isError: false,
+          };
         }
-        return { output: findings.length > 0 ? findings.join('\n') : 'No secrets detected ✓', isError: false };
+
+        return {
+          output: findings.length > 0
+            ? findings.map(f =>
+              `${f.severity === 'critical' ? '🔴' : '🟡'} [${f.type.toUpperCase()}] ${f.pattern}\n` +
+              `  Location: ${f.location}\n` +
+              `  Match: ${f.match}\n` +
+              `  Recommendation: ${f.recommendation}`
+            ).join('\n\n')
+            : 'No secrets detected ✓',
+          isError: false,
+        };
       },
     }];
   },
