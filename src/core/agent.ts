@@ -34,6 +34,9 @@ import { RLMManager } from '../rlm/manager';
 import { setRLMManager } from '../rlm/definitions';
 import { AuditLogger } from '../audit/logger';
 import { setAuditLogger } from '../audit/definitions';
+import { EvolutionOrchestrator } from '../evolution/orchestrator';
+import { EXPERT_AGENTS } from '../evolution/experts';
+import { BuiltInEditor } from '../editor/built-in-editor';
 import {
   printAssistantText,
   printToolCall,
@@ -62,6 +65,7 @@ import {
   WHITE,
   GREEN,
   YELLOW,
+  RED,
 } from '../tui/output';
 import {
   createSpinner,
@@ -171,6 +175,8 @@ export class MimoAgent {
   private sessionRollback: SessionRollbackManager;
   private rlmManager: RLMManager;
   private auditLogger: AuditLogger;
+  private evolutionOrchestrator: EvolutionOrchestrator;
+  private editor: BuiltInEditor;
 
   constructor(deps: AgentDeps) {
     this.config = deps.config;
@@ -204,6 +210,8 @@ export class MimoAgent {
     this.sessionRollback = new SessionRollbackManager(this.sessionId);
     this.rlmManager = new RLMManager({ workingDirectory: process.cwd() });
     this.auditLogger = new AuditLogger(this.sessionId);
+    this.evolutionOrchestrator = new EvolutionOrchestrator(deps.config);
+    this.editor = new BuiltInEditor(deps.config);
 
     // Wire up global tool instances
     setDiagnosticsManager(this.diagnosticsManager);
@@ -227,6 +235,8 @@ export class MimoAgent {
       { label: '沙箱系统', status: 'pending' as const },
       { label: 'RLM 引擎', status: 'pending' as const },
       { label: '审计日志', status: 'pending' as const },
+      { label: '自主进化', status: 'pending' as const },
+      { label: '内置编辑器', status: 'pending' as const },
     ];
     const animator = new MultiStepAnimator(steps);
     animator.start();
@@ -329,6 +339,28 @@ export class MimoAgent {
 
     // Initialize session rollback
     await this.sessionRollback.init();
+
+    // 10. Evolution Orchestrator - 自主进化协调系统
+    animator.setStep(9, 'running');
+    animator.render();
+    try {
+      await this.evolutionOrchestrator.init();
+      // 在后台启动完整进化流程，不阻塞主流程
+      this.evolutionOrchestrator.startFullEvolution().catch(() => {});
+      animator.setStep(9, 'done');
+    } catch {
+      animator.setStep(9, 'skipped');
+    }
+
+    // 11. 内置编辑器
+    animator.setStep(10, 'running');
+    animator.render();
+    try {
+      await this.editor.init();
+      animator.setStep(10, 'done');
+    } catch {
+      animator.setStep(10, 'skipped');
+    }
 
     animator.stop();
   }
@@ -678,6 +710,8 @@ export class MimoAgent {
 
     // Agent 主循环
     let maxTurns = this.config.agent.maxTurns;
+    let maxToolCalls = this.config.agent.maxToolCalls || 1000;  // 最大1000次工具调用
+    let toolCallCount = 0;
     let streamedText = '';
 
     while (maxTurns-- > 0) {
@@ -832,6 +866,19 @@ export class MimoAgent {
 
           // 权限检查（输入感知：区分只读/写操作子类型）
           const permission = this.yoloMode ? 'auto' : this.tools.checkPermission(toolName, toolInput);
+
+          // 检查工具调用次数限制
+          toolCallCount++;
+          if (toolCallCount > maxToolCalls) {
+            printWarning(`已达到最大工具调用次数限制 (${maxToolCalls})`);
+            toolResults.push({
+              type: 'tool_result',
+              tool_use_id: toolCall.id,
+              content: `已达到最大工具调用次数限制: ${maxToolCalls}`,
+              is_error: true,
+            });
+            continue;
+          }
 
           if (permission === 'denied') {
             if (this.nonInteractive) {
@@ -1008,6 +1055,17 @@ export class MimoAgent {
       await this.extractAndSaveMemories();
     }
 
+    // 从交互中学习（进化系统）
+    try {
+      const hasErrors = this.errorCount > 0;
+      await this.evolutionOrchestrator.learnFromInteraction(
+        userInput,
+        hasErrors ? 'failure' : 'success'
+      );
+    } catch {
+      // 学习失败不影响主流程
+    }
+
     // Record turn for session rollback
     const lastAssistant = [...this.conversationHistory].reverse().find(m => m.role === 'assistant');
     const assistantText = lastAssistant
@@ -1080,14 +1138,11 @@ export class MimoAgent {
     let errorMsg = '';
 
     // Get configured base URL for diagnostics
-    const baseUrl = this.config.api?.payAsYouGo?.baseUrl
-      || this.config.api?.tokenPlan?.baseUrl
-      || process.env.ANTHROPIC_BASE_URL
-      || '';
+    const baseUrl = process.env.ANTHROPIC_BASE_URL || '';
     const isProxy = baseUrl && !baseUrl.includes('api.anthropic.com');
 
     if (msg.includes('401') || msg.includes('Unauthorized')) {
-      errorMsg = 'API Key 无效 / API Key invalid. 请运行 mimo init 重新配置 / Run mimo init to reconfigure.';
+      errorMsg = 'API Key 无效 / API Key invalid. 请设置 ANTHROPIC_AUTH_TOKEN 环境变量 / Please set ANTHROPIC_AUTH_TOKEN environment variable.';
     } else if (msg.includes('429') || msg.includes('rate_limit') || msg.includes('rate limit')) {
       if (isProxy) {
         errorMsg = `429 频率超限 / Rate limit exceeded.\n`
@@ -1168,6 +1223,30 @@ export class MimoAgent {
         } catch {
           parts.push(`# 专家团队: ${expertAgent.name}\n\n${expertAgent.description}`);
         }
+      }
+    }
+
+    // 注入进化系统专家提示词
+    if (userInput) {
+      try {
+        const evolutionResult = await this.evolutionOrchestrator.processRequest(userInput);
+        if (evolutionResult.expert && evolutionResult.systemPrompt) {
+          parts.push(`# 行业专家: ${evolutionResult.expert.name} (${evolutionResult.expert.industry})\n\n${evolutionResult.systemPrompt}`);
+
+          // 如果有推荐专家，添加推荐信息
+          if (evolutionResult.recommendations.length > 1) {
+            const recList = evolutionResult.recommendations
+              .filter(r => r.id !== evolutionResult.expert!.id)
+              .slice(0, 3)
+              .map(r => `  - ${r.name} (${r.industry}): ${r.description}`)
+              .join('\n');
+            if (recList) {
+              parts.push(`# 相关专家推荐\n\n${recList}`);
+            }
+          }
+        }
+      } catch {
+        // 进化系统错误不影响主流程
       }
     }
 
@@ -1568,6 +1647,12 @@ export class MimoAgent {
     /todos [cmd]    待办事项 (add|done|clear)
     /tasks [cmd]    持久任务 (add|done|clear)
     /agents [cmd]   Agent 管理 (spawn|kill)
+    /experts        列出所有行业专家
+    /evolution      进化系统状态
+    /learn          学习报告
+    /knowledge      知识库管理 (stats|search|export)
+    /upgrade        Agent升级 (list|auto)
+    /editor         内置编辑器 (open|run|test|repair)
     /init [--force] 分析项目并生成 CLAUDE.md
     /context        显示上下文窗口使用情况
     /mode [mode]    查看/切换模式 (plan|agent|yolo)
@@ -2025,6 +2110,318 @@ export class MimoAgent {
         break;
       }
 
+      case '/experts': {
+        const dispatcher = this.evolutionOrchestrator.getExpertDispatcher();
+        const expertsByIndustry = dispatcher.listExpertsByIndustry();
+
+        console.log(`\n  ${ORANGE('👥 行业专家系统')}\n`);
+
+        for (const [industry, experts] of Object.entries(expertsByIndustry)) {
+          console.log(`  ${ORANGE(industry)} (${experts.length} 位)`);
+          for (const expert of experts) {
+            console.log(`    ${GRAY('•')} ${GREEN(expert.id.padEnd(35))} ${GRAY(expert.description.substring(0, 50))}`);
+          }
+          console.log('');
+        }
+
+        printInfo('使用方式: 输入相关关键词自动匹配专家');
+        printInfo('示例: "帮我优化React组件性能" → 自动匹配React专家');
+        break;
+      }
+
+      case '/evolution': {
+        const report = this.evolutionOrchestrator.generateComprehensiveReport();
+        console.log(report);
+        break;
+      }
+
+      case '/learn': {
+        const learningSystem = this.evolutionOrchestrator.getSelfLearningSystem();
+        const report = learningSystem.generateLearningReport();
+        console.log(report);
+        break;
+      }
+
+      case '/knowledge': {
+        const kbCmd = parts[1] || 'stats';
+        switch (kbCmd) {
+          case 'stats': {
+            const report = this.evolutionOrchestrator.generateKnowledgeReport();
+            console.log(report);
+            break;
+          }
+          case 'search': {
+            const query = parts.slice(2).join(' ');
+            if (!query) {
+              printWarning('用法: /knowledge search <查询>');
+              break;
+            }
+            const results = this.evolutionOrchestrator.searchKnowledge(query);
+            if (results.length === 0) {
+              printInfo('未找到相关知识');
+            } else {
+              console.log(`\n  ${ORANGE('搜索结果')} (${results.length} 条)\n`);
+              for (const item of results.slice(0, 10)) {
+                console.log(`  ${GREEN('●')} ${item.title}`);
+                console.log(`    ${GRAY(item.category)} | ${GRAY('相关性: ' + item.relevanceScore + '%')}`);
+                console.log(`    ${GRAY(item.content.substring(0, 80))}...`);
+                console.log('');
+              }
+            }
+            break;
+          }
+          case 'export': {
+            const format = (parts[2] as 'json' | 'markdown') || 'markdown';
+            try {
+              const exported = await this.evolutionOrchestrator.exportKnowledge(format);
+              const ext = format === 'json' ? 'json' : 'md';
+              const filePath = path.join(process.cwd(), `.mimo`, `knowledge-export.${ext}`);
+              await fs.writeFile(filePath, exported, 'utf-8');
+              printSuccess(`知识库已导出: ${filePath}`);
+            } catch (err: any) {
+              printError(`导出失败: ${err.message}`);
+            }
+            break;
+          }
+          default:
+            printInfo('用法: /knowledge [stats|search <query>|export [json|markdown]]');
+        }
+        break;
+      }
+
+      case '/upgrade': {
+        const upgradeCmd = parts[1] || 'list';
+        switch (upgradeCmd) {
+          case 'list': {
+            printInfo('可用的Agent升级选项:');
+            console.log('');
+            console.log(`  ${ORANGE('专家升级:')}`);
+            for (const expert of EXPERT_AGENTS.slice(0, 10)) {
+              const upgrades = this.evolutionOrchestrator.getKnowledgeManager().getAgentUpgrades(expert.id);
+              console.log(`    ${GREEN('●')} ${expert.name.padEnd(25)} ${GRAY(`(${upgrades.length} 次升级)`)}`);
+            }
+            console.log('');
+            printInfo('使用 /upgrade auto <agent-id> 自动升级指定Agent');
+            printInfo('使用 /upgrade auto-all 批量升级所有专家');
+            break;
+          }
+          case 'auto': {
+            const agentId = parts[2];
+            if (!agentId) {
+              printWarning('用法: /upgrade auto <agent-id>');
+              break;
+            }
+            const expert = EXPERT_AGENTS.find(e => e.id === agentId);
+            if (!expert) {
+              printWarning(`未找到Agent: ${agentId}`);
+              break;
+            }
+            await this.evolutionOrchestrator.autoUpgradeAgent(expert.id, expert.industry, expert.expertise);
+            break;
+          }
+          case 'auto-all': {
+            await this.evolutionOrchestrator.upgradeAllExperts();
+            break;
+          }
+          default:
+            printInfo('用法: /upgrade [list|auto <agent-id>|auto-all]');
+        }
+        break;
+      }
+
+      case '/editor': {
+        const editorCmd = parts[1] || 'help';
+        switch (editorCmd) {
+          case 'open': {
+            const fileName = parts[2];
+            if (!fileName) {
+              printWarning('用法: /editor open <文件名>');
+              break;
+            }
+            try {
+              const language = parts[3] || undefined;
+              const fileInfo = await this.editor.createFile(fileName, language);
+              printSuccess(`已打开文件: ${fileInfo.name} (${fileInfo.language})`);
+              printInfo('使用 /editor edit <内容> 编辑文件');
+              printInfo('使用 /editor run 运行文件');
+              printInfo('使用 /editor compile 编译文件');
+              printInfo('使用 /editor test 运行测试');
+              printInfo('使用 /editor repair AI修复错误');
+            } catch (err: any) {
+              printError(`打开文件失败: ${err.message}`);
+            }
+            break;
+          }
+          case 'edit': {
+            const content = parts.slice(2).join(' ');
+            if (!content) {
+              printWarning('用法: /editor edit <代码内容>');
+              break;
+            }
+            try {
+              this.editor.editContent(content);
+              printSuccess('代码已更新');
+            } catch (err: any) {
+              printError(`编辑失败: ${err.message}`);
+            }
+            break;
+          }
+          case 'save': {
+            try {
+              await this.editor.saveFile();
+              printSuccess('文件已保存');
+            } catch (err: any) {
+              printError(`保存失败: ${err.message}`);
+            }
+            break;
+          }
+          case 'compile': {
+            try {
+              const result = await this.editor.compile();
+              if (result.success) {
+                printSuccess(`编译成功 (${result.duration}ms)`);
+              } else {
+                printError(`编译失败 (${result.errors.length} 个错误)`);
+                for (const error of result.errors.slice(0, 5)) {
+                  console.log(`  ${RED('●')} 行 ${error.line}: ${error.message}`);
+                }
+              }
+            } catch (err: any) {
+              printError(`编译失败: ${err.message}`);
+            }
+            break;
+          }
+          case 'run': {
+            try {
+              const args = parts.slice(2);
+              await this.editor.run(args);
+            } catch (err: any) {
+              printError(`运行失败: ${err.message}`);
+            }
+            break;
+          }
+          case 'test': {
+            try {
+              const result = await this.editor.test();
+              if (result.success) {
+                printSuccess(`测试通过 (${result.passed}/${result.total})`);
+              } else {
+                printError(`测试失败 (${result.failed}/${result.total})`);
+              }
+            } catch (err: any) {
+              printError(`测试失败: ${err.message}`);
+            }
+            break;
+          }
+          case 'repair': {
+            try {
+              printInfo('正在使用AI分析和修复错误...');
+              const suggestions = await this.editor.aiRepair();
+              if (suggestions.length === 0) {
+                printSuccess('没有需要修复的错误');
+              } else {
+                printInfo(`发现 ${suggestions.length} 个修复建议:`);
+                for (const suggestion of suggestions) {
+                  console.log(`\n  ${ORANGE('●')} ${suggestion.error.message}`);
+                  console.log(`    ${GRAY('位置:')} 行 ${suggestion.error.line}`);
+                  console.log(`    ${GRAY('建议:')} ${suggestion.suggestion}`);
+                  console.log(`    ${GRAY('置信度:')} ${suggestion.confidence}%`);
+                  console.log(`    ${GRAY('修复代码:')} ${suggestion.fixedCode.substring(0, 50)}...`);
+                }
+                printInfo('\n使用 /editor apply <id> 应用修复建议');
+                printInfo('使用 /editor apply-all 应用所有高置信度修复');
+              }
+            } catch (err: any) {
+              printError(`AI修复失败: ${err.message}`);
+            }
+            break;
+          }
+          case 'apply': {
+            const suggestionId = parts[2];
+            if (!suggestionId) {
+              printWarning('用法: /editor apply <suggestion-id>');
+              break;
+            }
+            try {
+              await this.editor.applyRepair(suggestionId);
+            } catch (err: any) {
+              printError(`应用修复失败: ${err.message}`);
+            }
+            break;
+          }
+          case 'apply-all': {
+            try {
+              const applied = await this.editor.applyAllRepairs();
+              printSuccess(`已应用 ${applied} 个修复建议`);
+            } catch (err: any) {
+              printError(`应用修复失败: ${err.message}`);
+            }
+            break;
+          }
+          case 'status': {
+            const currentFile = this.editor.getCurrentFile();
+            if (currentFile) {
+              console.log(`\n  ${ORANGE('当前文件:')}\n`);
+              console.log(`  ${GREEN('●')} ${currentFile.name}`);
+              console.log(`    ${GRAY('语言:')} ${currentFile.language}`);
+              console.log(`    ${GRAY('路径:')} ${currentFile.path}`);
+              console.log(`    ${GRAY('修改:')} ${currentFile.modified ? '是' : '否'}`);
+              console.log(`    ${GRAY('保存:')} ${currentFile.savedAt || '未保存'}`);
+            } else {
+              printInfo('没有打开的文件');
+            }
+
+            const openFiles = this.editor.getOpenFiles();
+            if (openFiles.length > 0) {
+              console.log(`\n  ${ORANGE('打开的文件:')}\n`);
+              for (const file of openFiles) {
+                const modified = file.modified ? ' (已修改)' : '';
+                console.log(`    ${GRAY('•')} ${file.name}${modified}`);
+              }
+            }
+
+            const languages = this.editor.getSupportedLanguages();
+            console.log(`\n  ${ORANGE('支持的语言:')}\n`);
+            for (const lang of languages.slice(0, 10)) {
+              console.log(`    ${GRAY('•')} ${lang.name.padEnd(15)} ${GRAY(lang.extension)}`);
+            }
+            if (languages.length > 10) {
+              console.log(`    ${GRAY('... 还有')} ${languages.length - 10} ${GRAY('种语言')}`);
+            }
+            break;
+          }
+          case 'help':
+          default:
+            console.log(`
+  ${ORANGE('内置编辑器命令')}\n
+    /editor open <文件名> [语言]  创建/打开文件
+    /editor edit <内容>           编辑当前文件
+    /editor save                  保存当前文件
+    /editor compile               编译当前文件
+    /editor run [参数]            运行当前文件
+    /editor test                  运行测试
+    /editor repair                AI智能修复错误
+    /editor apply <id>            应用指定修复建议
+    /editor apply-all             应用所有高置信度修复
+    /editor status                查看编辑器状态
+    /editor help                  显示帮助
+
+  ${ORANGE('支持的语言:')}\n
+    TypeScript, JavaScript, Python, Rust, Go, Java, C++, C#, Ruby, PHP, Swift, Kotlin
+
+  ${ORANGE('示例:')}\n
+    /editor open main.ts          创建TypeScript文件
+    /editor open app.py python    创建Python文件
+    /editor edit console.log("hello")
+    /editor compile               编译检查错误
+    /editor repair                AI自动修复错误
+    /editor run                   运行程序
+    /editor test                  运行测试
+`);
+        }
+        break;
+      }
+
       case '/commands': {
         if (!this.slashCommands) {
           printInfo('Slash 命令系统未启用');
@@ -2445,6 +2842,12 @@ export class MimoAgent {
       { key: '/diagnostics', desc: 'LSP 诊断' },
       { key: '/constitution', desc: '宪法系统' },
       { key: '/agents', desc: 'Agent 管理' },
+      { key: '/experts', desc: '行业专家' },
+      { key: '/evolution', desc: '进化系统' },
+      { key: '/learn', desc: '学习报告' },
+      { key: '/knowledge', desc: '知识库管理' },
+      { key: '/upgrade', desc: 'Agent升级' },
+      { key: '/editor', desc: '内置编辑器' },
       { key: '/commands', desc: 'Slash 命令' },
       { key: '/mcp', desc: 'MCP 状态' },
       { key: '/init', desc: '生成 CLAUDE.md' },

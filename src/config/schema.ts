@@ -4,56 +4,34 @@ import { z } from 'zod';
 
 // ── Enums / Literal Types ──────────────────────────────────────────
 
-export type ApiMode = 'token-plan' | 'pay-as-you-go';
 export type AgentMode = 'plan' | 'agent' | 'custom' | 'yolo';
 export type ModelId = 'mimo-v2.5-pro' | 'mimo-v2.5' | 'auto';
-export type ProviderType = 'anthropic' | 'ollama' | 'openai-compatible';
 export type LocaleType = 'zh-CN' | 'en-US';
 export type FeatureMaturity = 'stable' | 'beta' | 'experimental';
 
-const VALID_API_MODES: ApiMode[] = ['token-plan', 'pay-as-you-go'];
 const VALID_AGENT_MODES: AgentMode[] = ['plan', 'agent', 'custom', 'yolo'];
 const VALID_MODEL_IDS: ModelId[] = ['mimo-v2.5-pro', 'mimo-v2.5', 'auto'];
-const VALID_PROVIDERS: ProviderType[] = ['anthropic', 'ollama', 'openai-compatible'];
 const VALID_LOCALES: LocaleType[] = ['zh-CN', 'en-US'];
 const VALID_MATURITY_LEVELS: FeatureMaturity[] = ['stable', 'beta', 'experimental'];
 
 // ── Zod Schemas ────────────────────────────────────────────────────
 
-export const ProviderSchema = z.enum(['anthropic', 'ollama', 'openai-compatible']);
 export const LocaleSchema = z.enum(['zh-CN', 'en-US']);
 export const FeatureMaturitySchema = z.enum(['stable', 'beta', 'experimental']);
-export const ApiModeSchema = z.enum(['token-plan', 'pay-as-you-go']);
 export const AgentModeSchema = z.enum(['plan', 'agent', 'custom', 'yolo']);
 export const ModelIdSchema = z.enum(['mimo-v2.5-pro', 'mimo-v2.5', 'auto']);
 
-export const TokenPlanConfigSchema = z.object({
-  apiKey: z.string().default(''),
-  baseUrl: z.string().default(''),
-  monthlyBudget: z.number().min(0).finite().default(999_999_999_999),
-}).strict();
-
-export const PayAsYouGoConfigSchema = z.object({
-  apiKey: z.string().default(''),
-  baseUrl: z.string().default(''),
-  maxTokensPerTurn: z.number().min(1).finite().default(32768),
-}).strict();
-
 export const ApiConfigSchema = z.object({
-  mode: ApiModeSchema.default('token-plan'),
   model: ModelIdSchema.default('auto'),
-  provider: ProviderSchema.default('anthropic'),
-  tokenPlan: TokenPlanConfigSchema.default({}),
-  payAsYouGo: PayAsYouGoConfigSchema.default({}),
   stream: z.boolean().default(true),
-  ollamaEndpoint: z.string().default('http://localhost:11434'),
-  openaiEndpoint: z.string().default(''),
-  openaiApiKey: z.string().default(''),
+  maxTokens: z.number().int().min(1).default(200000),  // 最大200K tokens
+  maxContextTokens: z.number().int().min(1).default(200000),  // 最大上下文窗口
 }).strict();
 
 export const AgentConfigSchema = z.object({
   mode: AgentModeSchema.default('agent'),
-  maxTurns: z.number().int().min(1).default(50),
+  maxTurns: z.number().int().min(1).default(1000),  // 最大1000轮
+  maxToolCalls: z.number().int().min(1).default(1000),  // 最大1000次工具调用
   autoApproveReads: z.boolean().default(true),
 }).strict();
 
@@ -101,8 +79,6 @@ export const MimoConfigSchema = z.object({
 
 // ── TypeScript Interfaces (derived from zod schemas) ──────────────
 
-export type TokenPlanConfig = z.infer<typeof TokenPlanConfigSchema>;
-export type PayAsYouGoConfig = z.infer<typeof PayAsYouGoConfigSchema>;
 export type ApiConfig = z.infer<typeof ApiConfigSchema>;
 export type AgentConfig = z.infer<typeof AgentConfigSchema>;
 export type ToolConfig = z.infer<typeof ToolConfigSchema>;
@@ -117,27 +93,7 @@ export type MimoConfig = z.infer<typeof MimoConfigSchema>;
 
 export const DEFAULT_CONFIG: MimoConfig = MimoConfigSchema.parse({});
 
-// ── Backward-compatible V1 interface (used during migration) ──────
-
-export interface MimoConfigV1 {
-  api: {
-    mode: ApiMode;
-    model: ModelId;
-    tokenPlan: TokenPlanConfig;
-    payAsYouGo: PayAsYouGoConfig;
-    stream: boolean;
-  };
-  agent: AgentConfig;
-  tools: ToolConfig;
-  sandbox: SandboxConfig;
-  promptCaching: PromptCachingConfig;
-  features: {
-    enabled: boolean;
-    disabledFeatures: string[];
-  };
-}
-
-// ── Validation helpers (zod-based, with backward-compat API) ─────
+// ── Validation helpers (zod-based) ────────────────────────────────
 
 export interface ValidationError {
   path: string;
@@ -146,7 +102,6 @@ export interface ValidationError {
 
 /**
  * Validate the full MimoConfig, returning an array of errors.
- * Uses zod internally; falls back gracefully if partial config provided.
  */
 export function validateConfig(config: Partial<MimoConfig>): ValidationError[] {
   const errors: ValidationError[] = [];
@@ -182,69 +137,11 @@ export function validateConfig(config: Partial<MimoConfig>): ValidationError[] {
 export function validateApiConfig(api: Partial<ApiConfig>): ValidationError[] {
   const errors: ValidationError[] = [];
 
-  if (api.mode !== undefined && !VALID_API_MODES.includes(api.mode)) {
-    errors.push({ path: 'api.mode', message: `Invalid API mode "${api.mode}". Must be one of: ${VALID_API_MODES.join(', ')}` });
-  }
   if (api.model !== undefined && !VALID_MODEL_IDS.includes(api.model)) {
     errors.push({ path: 'api.model', message: `Invalid model "${api.model}". Must be one of: ${VALID_MODEL_IDS.join(', ')}` });
   }
-  if (api.provider !== undefined && !VALID_PROVIDERS.includes(api.provider)) {
-    errors.push({ path: 'api.provider', message: `Invalid provider "${api.provider}". Must be one of: ${VALID_PROVIDERS.join(', ')}` });
-  }
   if (api.stream !== undefined && typeof api.stream !== 'boolean') {
     errors.push({ path: 'api.stream', message: 'Must be a boolean' });
-  }
-  if (api.ollamaEndpoint !== undefined && typeof api.ollamaEndpoint !== 'string') {
-    errors.push({ path: 'api.ollamaEndpoint', message: 'Must be a valid URL string' });
-  }
-  if (api.openaiEndpoint !== undefined && typeof api.openaiEndpoint !== 'string') {
-    errors.push({ path: 'api.openaiEndpoint', message: 'Must be a valid URL string' });
-  }
-  if (api.openaiApiKey !== undefined && typeof api.openaiApiKey !== 'string') {
-    errors.push({ path: 'api.openaiApiKey', message: 'Must be a string' });
-  }
-
-  if (api.tokenPlan) {
-    errors.push(...validateTokenPlanConfig(api.tokenPlan));
-  }
-  if (api.payAsYouGo) {
-    errors.push(...validatePayAsYouGoConfig(api.payAsYouGo));
-  }
-
-  return errors;
-}
-
-export function validateTokenPlanConfig(tp: Partial<TokenPlanConfig>): ValidationError[] {
-  const errors: ValidationError[] = [];
-
-  if (tp.apiKey !== undefined && typeof tp.apiKey !== 'string') {
-    errors.push({ path: 'api.tokenPlan.apiKey', message: 'Must be a string' });
-  }
-  if (tp.baseUrl !== undefined && typeof tp.baseUrl !== 'string') {
-    errors.push({ path: 'api.tokenPlan.baseUrl', message: 'Must be a string' });
-  }
-  if (tp.monthlyBudget !== undefined) {
-    if (typeof tp.monthlyBudget !== 'number' || !isFinite(tp.monthlyBudget) || tp.monthlyBudget < 0) {
-      errors.push({ path: 'api.tokenPlan.monthlyBudget', message: 'Must be a non-negative finite number' });
-    }
-  }
-
-  return errors;
-}
-
-export function validatePayAsYouGoConfig(payg: Partial<PayAsYouGoConfig>): ValidationError[] {
-  const errors: ValidationError[] = [];
-
-  if (payg.apiKey !== undefined && typeof payg.apiKey !== 'string') {
-    errors.push({ path: 'api.payAsYouGo.apiKey', message: 'Must be a string' });
-  }
-  if (payg.baseUrl !== undefined && typeof payg.baseUrl !== 'string') {
-    errors.push({ path: 'api.payAsYouGo.baseUrl', message: 'Must be a string' });
-  }
-  if (payg.maxTokensPerTurn !== undefined) {
-    if (typeof payg.maxTokensPerTurn !== 'number' || !isFinite(payg.maxTokensPerTurn) || payg.maxTokensPerTurn < 1) {
-      errors.push({ path: 'api.payAsYouGo.maxTokensPerTurn', message: 'Must be a positive finite number' });
-    }
   }
 
   return errors;
@@ -350,27 +247,12 @@ export function validateDebugConfig(debug: Partial<DebugConfig>): ValidationErro
   return errors;
 }
 
-// ── Flat-key accessors for `mimo config get/set` ──────────────────
+// ── Flat-key accessors for config get/set ─────────────────────────
 
-/**
- * Map of dot-separated config keys to their getter/setter paths.
- * Used by the config get/set CLI commands.
- */
 export const CONFIG_KEY_MAP: Record<string, { description: string; type: 'string' | 'number' | 'boolean' }> = {
   // API section
-  'api.mode':            { description: 'API connection mode (token-plan | pay-as-you-go)', type: 'string' },
   'api.model':           { description: 'Default model (mimo-v2.5-pro | mimo-v2.5 | auto)', type: 'string' },
-  'api.provider':        { description: 'API provider (anthropic | ollama | openai-compatible)', type: 'string' },
   'api.stream':          { description: 'Enable streaming responses', type: 'boolean' },
-  'api.ollamaEndpoint':  { description: 'Ollama API endpoint URL', type: 'string' },
-  'api.openaiEndpoint':  { description: 'OpenAI-compatible endpoint URL', type: 'string' },
-  'api.openaiApiKey':    { description: 'API key for OpenAI-compatible endpoints', type: 'string' },
-  'api.tokenPlan.apiKey':       { description: 'Token Plan API key', type: 'string' },
-  'api.tokenPlan.baseUrl':      { description: 'Token Plan base URL', type: 'string' },
-  'api.tokenPlan.monthlyBudget':{ description: 'Monthly token budget', type: 'number' },
-  'api.payAsYouGo.apiKey':      { description: 'Pay-as-you-go API key', type: 'string' },
-  'api.payAsYouGo.baseUrl':     { description: 'Pay-as-you-go base URL', type: 'string' },
-  'api.payAsYouGo.maxTokensPerTurn': { description: 'Max tokens per turn', type: 'number' },
   // Agent section
   'agent.mode':             { description: 'Agent mode (plan | agent | yolo)', type: 'string' },
   'agent.maxTurns':         { description: 'Max agent turns', type: 'number' },

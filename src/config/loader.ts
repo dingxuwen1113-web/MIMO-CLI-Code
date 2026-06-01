@@ -4,12 +4,9 @@ import * as os from 'os';
 import * as toml from 'toml';
 import {
   MimoConfig,
-  MimoConfigV1,
   DEFAULT_CONFIG,
-  ApiMode,
   AgentMode,
   ModelId,
-  ProviderType,
   LocaleType,
   FeatureMaturity,
   validateConfig,
@@ -93,7 +90,6 @@ export async function loadConfig(cliOptions: any = {}): Promise<MimoConfig> {
 
   // Map settings.json fields to MimoConfig
   if (settingsConfig.api?.model) config.api.model = settingsConfig.api.model;
-  if (settingsConfig.api?.provider) config.api.provider = settingsConfig.api.provider;
   if (settingsConfig.agent?.mode) config.agent.mode = settingsConfig.agent.mode;
   if (settingsConfig.agent?.maxTurns) config.agent.maxTurns = settingsConfig.agent.maxTurns;
   if (settingsConfig.tools?.shellTimeout) config.tools.shellTimeout = settingsConfig.tools.shellTimeout;
@@ -108,50 +104,16 @@ export async function loadConfig(cliOptions: any = {}): Promise<MimoConfig> {
   // CLI option overrides
   if (cliOptions.model) config.api.model = cliOptions.model as ModelId;
   if (cliOptions.mode) config.agent.mode = cliOptions.mode as AgentMode;
-  if (cliOptions.apiMode) config.api.mode = cliOptions.apiMode as ApiMode;
   if (cliOptions.maxTurns) config.agent.maxTurns = parseInt(cliOptions.maxTurns, 10);
   if (cliOptions.stream === false) config.api.stream = false;
-  if (cliOptions.provider) config.api.provider = cliOptions.provider as ProviderType;
   if (cliOptions.locale) config.i18n.locale = cliOptions.locale as LocaleType;
 
-  // Environment variable overrides (only non-empty values)
-  if (process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY.trim()) {
-    if (config.api.mode === 'token-plan') {
-      config.api.tokenPlan.apiKey = process.env.ANTHROPIC_API_KEY;
-    } else {
-      config.api.payAsYouGo.apiKey = process.env.ANTHROPIC_API_KEY;
-    }
-  }
+  // Environment variable overrides
   if (process.env.MIMO_MODEL) config.api.model = process.env.MIMO_MODEL as ModelId;
   if (process.env.MIMO_MODE) config.agent.mode = process.env.MIMO_MODE as AgentMode;
-  if (process.env.MIMO_PROVIDER) config.api.provider = process.env.MIMO_PROVIDER as ProviderType;
   if (process.env.MIMO_LOCALE) config.i18n.locale = process.env.MIMO_LOCALE as LocaleType;
   if (process.env.MIMO_DEBUG === '1' || process.env.MIMO_DEBUG === 'true') {
     config.debug.enabled = true;
-  }
-  if (process.env.OLLAMA_HOST) {
-    config.api.ollamaEndpoint = process.env.OLLAMA_HOST;
-  }
-  if (process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.trim()) {
-    config.api.openaiApiKey = process.env.OPENAI_API_KEY;
-  }
-  if (process.env.OPENAI_BASE_URL && process.env.OPENAI_BASE_URL.trim()) {
-    config.api.openaiEndpoint = process.env.OPENAI_BASE_URL;
-  }
-  if (process.env.ANTHROPIC_BASE_URL && process.env.ANTHROPIC_BASE_URL.trim()) {
-    const envUrl = process.env.ANTHROPIC_BASE_URL.trim().replace(/\/+$/, '');
-    // Config file (mimo init) takes priority for the active mode.
-    // Env var fills in when config has no baseUrl (user hasn't run mimo init yet).
-    const activeMode = config.api.mode;
-    if (activeMode === 'token-plan' && !config.api.tokenPlan.baseUrl) {
-      config.api.tokenPlan.baseUrl = envUrl;
-    }
-    if (activeMode === 'pay-as-you-go' && !config.api.payAsYouGo.baseUrl) {
-      config.api.payAsYouGo.baseUrl = envUrl;
-    }
-    // Always set the inactive mode if it has no baseUrl
-    if (!config.api.tokenPlan.baseUrl) config.api.tokenPlan.baseUrl = envUrl;
-    if (!config.api.payAsYouGo.baseUrl) config.api.payAsYouGo.baseUrl = envUrl;
   }
 
   // Validate the merged config and warn about issues
@@ -165,7 +127,7 @@ export async function loadConfig(cliOptions: any = {}): Promise<MimoConfig> {
   return config;
 }
 
-// ── Settings Loading ───────────────────────────────────────────────
+// Settings Loading
 
 /** Get the full merged settings (for hooks and other subsystems). */
 export async function loadMergedSettings(): Promise<Record<string, any>> {
@@ -238,24 +200,12 @@ export async function migrateConfig(): Promise<{ migrated: boolean; message: str
     // If backup fails, proceed anyway
   }
 
-  // Build v2 config by merging v1 data with v2 defaults
-  const v1Config = rawConfig as Partial<MimoConfigV1>;
+  // Build config by merging raw data with defaults
+  const rawConfigPartial = rawConfig as Partial<MimoConfig>;
 
   // Ensure nested objects exist before merging
-  const v2Additions: Partial<MimoConfig> = {
+  const configAdditions: Partial<MimoConfig> = {
     version: 2,
-    api: {
-      ...(v1Config.api || {}),
-      provider: 'anthropic' as ProviderType,
-      ollamaEndpoint: 'http://localhost:11434',
-      openaiEndpoint: '',
-      openaiApiKey: '',
-      rateLimit: {
-        requestsPerMinute: 60,
-        minIntervalMs: 1000,
-        maxRetries: 3,
-      },
-    } as any,
     i18n: {
       locale: 'zh-CN' as LocaleType,
     },
@@ -263,12 +213,12 @@ export async function migrateConfig(): Promise<{ migrated: boolean; message: str
       enabled: false,
     },
     features: {
-      ...(v1Config.features || { enabled: true, disabledFeatures: [] }),
+      ...(rawConfigPartial.features || { enabled: true, disabledFeatures: [] }),
       maturity: 'stable' as FeatureMaturity,
     },
   };
 
-  const migrated = deepMerge(DEFAULT_CONFIG, deepMerge(v1Config, v2Additions));
+  const migrated = deepMerge(DEFAULT_CONFIG, deepMerge(rawConfigPartial, configAdditions));
 
   // Save the migrated config
   await saveConfig(migrated);
