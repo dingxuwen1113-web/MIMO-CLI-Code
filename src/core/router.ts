@@ -14,9 +14,11 @@ interface TaskContext {
 
 export class ModelRouter {
   private baseModel: string;
+  private resolvedBaseUrl: string;
 
-  constructor(baseModel: string) {
+  constructor(baseModel: string, baseUrl?: string) {
     this.baseModel = baseModel;
+    this.resolvedBaseUrl = baseUrl || process.env.ANTHROPIC_BASE_URL || '';
   }
 
   route(task: TaskContext = {}): ModelChoice {
@@ -30,17 +32,14 @@ export class ModelRouter {
       return 'mimo-v2.5-pro';
     }
 
-    // 检测是否在使用 mimo 代理（通过环境变量或配置）
+    // 检测是否在使用 mimo 代理（通过配置或环境变量）
     const isMimoProxy = !!(
-      process.env.ANTHROPIC_BASE_URL?.includes('mimo') ||
+      this.resolvedBaseUrl?.includes('mimo') ||
       process.env.MIMO_MODEL?.startsWith('mimo')
     );
 
     if (isMimoProxy) {
-      // mimo 代理路由
-      if (task.isSimpleChat) return 'mimo-v2.5';
-      if (task.isArchitectural || task.isComplexRefactor) return 'mimo-v2.5-pro';
-      if (task.previousErrors && task.previousErrors > 2) return 'mimo-v2.5-pro';
+      // mimo 代理路由 — 统一使用 pro 模型（非 pro 模型有严格 60s 限速）
       return 'mimo-v2.5-pro';
     }
 

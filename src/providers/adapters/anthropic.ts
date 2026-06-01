@@ -151,10 +151,10 @@ class AnthropicAdapter implements ProviderAdapter {
       process.env.CLAUDE_API_KEY ||
       '';
 
-    const options: ClientOptions = { apiKey };
+    const options: ClientOptions = { apiKey, maxRetries: 3, timeout: 120_000 };
 
     if (config.baseUrl) {
-      options.baseURL = config.baseUrl;
+      options.baseURL = config.baseUrl.replace(/\/+$/, '');
     }
     if (config.timeout) {
       options.timeout = config.timeout;
@@ -323,7 +323,28 @@ class AnthropicAdapter implements ProviderAdapter {
       };
     }
 
-    const response = await this.client.messages.create(params);
+    let response: Anthropic.Message;
+    try {
+      response = await this.client.messages.create(params);
+    } catch (err: any) {
+      if (err?.status === 429) {
+        // Respect Retry-After header
+        const retryAfter = err?.headers?.['retry-after'];
+        if (retryAfter) {
+          const waitMs = Math.min(parseInt(retryAfter, 10) * 1000, 15000);
+          await new Promise(r => setTimeout(r, waitMs));
+          try {
+            response = await this.client.messages.create(params);
+          } catch (retryErr: any) {
+            throw this.wrapApiError(retryErr);
+          }
+        } else {
+          throw this.wrapApiError(err);
+        }
+      } else {
+        throw this.wrapApiError(err);
+      }
+    }
 
     const content = this.extractContentBlocks(
       response.content as Anthropic.ContentBlock[]
@@ -419,7 +440,21 @@ class AnthropicAdapter implements ProviderAdapter {
       });
 
       // Wait for the stream to complete
-      const finalMessage = await stream.finalMessage();
+      let finalMessage: Anthropic.Message;
+      try {
+        finalMessage = await stream.finalMessage();
+      } catch (innerErr: any) {
+        if (innerErr?.status === 429) {
+          // Respect Retry-After header before giving up
+          const retryAfter = innerErr?.headers?.['retry-after'];
+          if (retryAfter) {
+            const waitMs = Math.min(parseInt(retryAfter, 10) * 1000, 15000);
+            await new Promise(r => setTimeout(r, waitMs));
+          }
+          throw this.wrapApiError(innerErr);
+        }
+        throw innerErr;
+      }
 
       responseId = finalMessage.id;
       responseModel = finalMessage.model;
@@ -465,6 +500,9 @@ class AnthropicAdapter implements ProviderAdapter {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
       callbacks.onError?.(errorMessage);
+      if (error instanceof Error && (error as any).status === 429) {
+        throw this.wrapApiError(error);
+      }
       throw error;
     }
 
@@ -480,6 +518,30 @@ class AnthropicAdapter implements ProviderAdapter {
         cacheRead,
       },
     };
+  }
+
+  // ── Error wrapping ────────────────────────────────────────────
+
+  private wrapApiError(err: any): Error {
+    const status = err?.status || err?.statusCode || err?.error?.status;
+    const message = err?.message || String(err);
+
+    if (status === 401 || message.includes('401')) {
+      return new Error('Anthropic API key is invalid or expired. Run "mimo init" to reconfigure.');
+    }
+    if (status === 403 || message.includes('403')) {
+      return new Error('Anthropic API key does not have permission. Check your plan limits.');
+    }
+    if (status === 429 || message.includes('429')) {
+      return new Error('429_rate_limit: Rate limit exceeded after retries. Please wait and try again.');
+    }
+    if (status === 529 || message.includes('529')) {
+      return new Error('529_overloaded: API is temporarily overloaded. Please wait and retry.');
+    }
+    if (message.includes('ECONNREFUSED') || message.includes('ENOTFOUND')) {
+      return new Error(`Cannot reach Anthropic API at ${this.config.baseUrl || 'default endpoint'}. Check your network and base URL.`);
+    }
+    return new Error(`Anthropic API error: ${message}`);
   }
 
   // ── listModels() ──────────────────────────────────────────────

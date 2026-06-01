@@ -54,6 +54,7 @@ import {
   drawBottomBar,
   BottomBarState,
   ORANGE,
+  ORANGE_L,
   GRAY,
   GRAY_DIM,
   CYAN,
@@ -158,6 +159,8 @@ export class MimoAgent {
   private thinkingExplicitlyDisabled: boolean = false;
   private sessionFile: string = '';
   private autoVerifyCount: number = 0;
+  private thinkingLinesPrinted: number = 0;
+  private thinkingRendered: string = '';
   private cachedEnvironmentInfo: EnvironmentInfo | null = null;
   private todos: Array<{ text: string; done: boolean }> = [];
   private taskManager: TaskManager;
@@ -688,39 +691,55 @@ export class MimoAgent {
         }
 
         const toolDefs = this.tools.getDefinitions();
-        let response: Anthropic.Message;
+        let response!: Anthropic.Message;
         streamedText = '';
 
+        // Agent-level 429 retry: if all lower-level retries exhausted, wait once and retry
+        const callApi = async (): Promise<Anthropic.Message> => {
+          if (this.config.api.stream) {
+            return this.apiClient.chatStream(
+              this.conversationHistory as any,
+              toolDefs,
+              systemPrompt,
+              {
+                onText: (text) => {
+                  streamedText += text;
+                  if (this.nonInteractive) {
+                    this.nonInteractiveBuffer += text;
+                  } else {
+                    process.stdout.write(text);
+                  }
+                },
+                onThinking: (delta) => {
+                  if (!this.nonInteractive && useThinking) {
+                    this.thinkingRendered += delta;
+                    if (this.thinkingLinesPrinted === 0) {
+                      process.stdout.write(`\n  ${ORANGE_L('☆')} ${GRAY_DIM('Thinking')}\n`);
+                    }
+                    this.renderThinkingBlock(this.thinkingRendered);
+                  }
+                },
+              },
+              { model, thinking: useThinking }
+            );
+          } else {
+            return this.apiClient.chat(
+              this.conversationHistory as any,
+              toolDefs,
+              systemPrompt,
+              { model, thinking: useThinking }
+            );
+          }
+        };
+
+        response = await callApi();
+        // Post-API-call: handle streaming display cleanup or non-streaming content
         if (this.config.api.stream) {
-          response = await this.apiClient.chatStream(
-            this.conversationHistory as any,
-            toolDefs,
-            systemPrompt,
-            {
-              onText: (text) => {
-                streamedText += text;
-                if (this.nonInteractive) {
-                  this.nonInteractiveBuffer += text;
-                } else {
-                  process.stdout.write(text);
-                }
-              },
-              onThinking: (thinking) => {
-                if (!this.nonInteractive && useThinking) {
-                  printThinking(thinking);
-                }
-              },
-            },
-            { model, thinking: useThinking }
-          );
-          if (!this.nonInteractive && streamedText) console.log('');
+          this.clearThinking();
+          if (!this.nonInteractive && streamedText) {
+            console.log('');
+          }
         } else {
-          response = await this.apiClient.chat(
-            this.conversationHistory as any,
-            toolDefs,
-            systemPrompt,
-            { model, thinking: useThinking }
-          );
           for (const block of response.content) {
             if (block.type === 'text') {
               if (this.nonInteractive) {
@@ -729,6 +748,7 @@ export class MimoAgent {
                 printAssistantText(block.text);
               }
             } else if (block.type === 'thinking' && !this.nonInteractive && useThinking) {
+              if (this.thinkingLinesPrinted > 0) this.clearThinking();
               printThinking((block as any).thinking);
             }
           }
@@ -1024,19 +1044,70 @@ export class MimoAgent {
     return true;
   }
 
+  // ── Incremental thinking display ─────────────
+  private clearThinking(): void {
+    this.thinkingLinesPrinted = 0;
+    this.thinkingRendered = '';
+  }
+
+  private renderThinkingBlock(content: string): void {
+    const MAX_LINES = 15;
+    const lines = content.split('\n').filter((l, i, arr) => i < arr.length - 1 || l.length > 0);
+    const overflows = lines.length > MAX_LINES;
+    const display = overflows ? lines.slice(0, MAX_LINES) : lines;
+
+    // Rewrite entire block in-place to avoid terminal flicker
+    if (this.thinkingLinesPrinted > 0) {
+      for (let i = 0; i < this.thinkingLinesPrinted; i++) {
+        process.stdout.write('\x1b[A\x1b[2K');
+      }
+    }
+
+    for (const line of display) {
+      process.stdout.write(`  ${GRAY_DIM('│')} ${GRAY_DIM(line)}\n`);
+    }
+    if (overflows) {
+      process.stdout.write(`  ${GRAY_DIM('│')} ${GRAY_DIM(`… +${lines.length - MAX_LINES} lines`)}\n`);
+    }
+
+    this.thinkingLinesPrinted = display.length + (overflows ? 1 : 0);
+    this.thinkingRendered = content;
+  }
+
   // ── API 错误处理 ──────────────────────────────
   private handleApiError(err: any): void {
     const msg = err.message || String(err);
     let errorMsg = '';
 
+    // Get configured base URL for diagnostics
+    const baseUrl = this.config.api?.payAsYouGo?.baseUrl
+      || this.config.api?.tokenPlan?.baseUrl
+      || process.env.ANTHROPIC_BASE_URL
+      || '';
+    const isProxy = baseUrl && !baseUrl.includes('api.anthropic.com');
+
     if (msg.includes('401') || msg.includes('Unauthorized')) {
       errorMsg = 'API Key 无效 / API Key invalid. 请运行 mimo init 重新配置 / Run mimo init to reconfigure.';
     } else if (msg.includes('429') || msg.includes('rate_limit') || msg.includes('rate limit')) {
-      errorMsg = 'API 请求被拒绝(429) / Request rejected by API. 请检查 API Key、baseUrl 和代理配置是否正确 / Check API key, baseUrl, and proxy config. 运行 mimo init 重新配置 / Run mimo init to reconfigure.';
+      if (isProxy) {
+        errorMsg = `429 频率超限 / Rate limit exceeded.\n`
+          + `  代理地址 / Proxy: ${baseUrl}\n`
+          + `  已重试 3 次(5s/10s/20s)均失败 / All 3 retries failed.\n`
+          + `  可能原因 / Possible causes:\n`
+          + `  1. API Key 额度用尽 / API key quota exhausted\n`
+          + `  2. 代理服务自身限流 / Proxy has its own rate limit\n`
+          + `  3. API Key 无效被代理返回 429 / Invalid key returned as 429\n`
+          + `  请检查代理服务后台或更换 API Key / Check proxy dashboard or use a different API key.`;
+      } else {
+        errorMsg = `429 频率超限 / Rate limit exceeded.\n`
+          + `  已重试 3 次(5s/10s/20s)均失败 / All 3 retries failed.\n`
+          + `  请等待几分钟后重试 / Wait a few minutes and retry.\n`
+          + `  或运行 mimo init 重新配置 API Key / Or run mimo init to reconfigure.`;
+      }
     } else if (msg.includes('529') || msg.includes('overloaded')) {
       errorMsg = 'API 过载 / API overloaded. 请稍等片刻后重试 / Please wait and retry.';
     } else if (msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND')) {
-      errorMsg = '无法连接 API / Cannot connect to API. 请检查网络和端点配置 / Check network and endpoint config.';
+      errorMsg = `无法连接 API / Cannot connect to API.${baseUrl ? ` 地址: ${baseUrl}` : ''} 请检查网络和端点配置 / Check network and endpoint config.`;
     } else if (msg.includes('timeout') || msg.includes('ETIMEDOUT')) {
       errorMsg = 'API 请求超时 / API request timed out.';
     } else if (msg.includes('403') || msg.includes('Forbidden')) {
@@ -1600,19 +1671,6 @@ export class MimoAgent {
         const stats = this.apiClient.getUsageStats();
         const budget = this.apiClient.getBudgetInfo();
         printUsageStats(stats, budget);
-
-        // Rate limiter stats
-        try {
-          const { getGlobalRateLimiter } = require('../api/rate-limiter');
-          const rl = getGlobalRateLimiter();
-          const rlStats = rl.getStats();
-          const rlConfig = rl.getConfig();
-          console.log(`\n  ${ORANGE('Rate Limiter')}`);
-          console.log(`  Requests: ${rlStats.totalRequests} total, ${rlStats.total429s} rate-limited, ${rlStats.successRate}% success`);
-          console.log(`  Retries: ${rlStats.totalRetries}, Waits: ${rlStats.totalWaits} (${Math.round(rlStats.totalWaitMs / 1000)}s total)`);
-          console.log(`  Cooldown: level ${rlStats.cooldownLevel}, ${rlStats.cooldownActive ? `active (${Math.round(rlStats.cooldownRemainingMs / 1000)}s left)` : 'inactive'}`);
-          console.log(`  Config: ${rlConfig.requestsPerMinute} RPM, ${rlConfig.minIntervalMs}ms min interval, ${rlConfig.maxRetries} max retries`);
-        } catch { /* rate limiter stats are non-critical */ }
         break;
       }
 

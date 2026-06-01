@@ -2,6 +2,8 @@ import Anthropic from '@anthropic-ai/sdk';
 import createDebug from 'debug';
 import { MimoConfig } from '../config/schema';
 import { ApiAdapter, BudgetInfo, UsageStats, StreamCallbacks } from './types';
+import { withRetry } from './withRetry';
+import { preconnectApi } from './preconnect';
 
 const debug = createDebug('mimo:api');
 
@@ -24,25 +26,24 @@ export class PayAsYouGoAdapter implements ApiAdapter {
 
   constructor(config: MimoConfig) {
     this.config = config;
-    const baseUrl = config.api.payAsYouGo.baseUrl;
 
-    // Use SDK's built-in retry logic (like Claude Code/Codex)
+    // Claude Code pattern: SDK does 0 retries, withRetry handles everything
     const clientOpts: Record<string, any> = {
       apiKey: config.api.payAsYouGo.apiKey,
-      maxRetries: 2,        // SDK handles 429 retries automatically
-      timeout: 120_000,
+      maxRetries: 0,
+      timeout: 600_000,  // 10 minutes
     };
-    if (baseUrl) {
-      clientOpts.baseURL = baseUrl;
+    if (config.api.payAsYouGo.baseUrl) {
+      clientOpts.baseURL = config.api.payAsYouGo.baseUrl.replace(/\/+$/, '');
     }
     this.client = new Anthropic(clientOpts as any);
+
+    // Preconnect: warm TCP+TLS (fire-and-forget, like Claude Code)
+    if (clientOpts.baseURL) preconnectApi(clientOpts.baseURL);
   }
 
   resolveModel(requestedModel: string): string {
-    if (requestedModel === 'auto') {
-      if (this.config.api.payAsYouGo.baseUrl?.includes('mimo')) return 'mimo-v2.5-pro';
-      return 'mimo-v2.5-pro';
-    }
+    if (requestedModel === 'auto') return 'mimo-v2.5-pro';
     return requestedModel;
   }
 
@@ -73,23 +74,32 @@ export class PayAsYouGoAdapter implements ApiAdapter {
       createParams.max_tokens = Math.max(maxTokens, 64000);
     }
 
+    // Try with original model, fall back to mimo-v2.5 on consecutive 429s
     try {
-      const response = await this.client.messages.create(createParams);
-      this.trackUsage(model, response.usage);
-      return response;
-    } catch (err: any) {
-      if (err?.status === 429 && model === 'mimo-v2.5-pro') {
-        debug('mimo-v2.5-pro got 429, downgrading to mimo-v2.5');
-        createParams.model = 'mimo-v2.5';
-        try {
+      return await withRetry(
+        async () => {
           const response = await this.client.messages.create(createParams);
-          this.trackUsage('mimo-v2.5', response.usage);
+          this.trackUsage(model, response.usage);
           return response;
-        } catch (retryErr: any) {
-          throw this.wrapApiError(retryErr, model);
+        },
+        {
+          label: `chat(${model})`,
+          onRetry: ({ attempt, delayMs, status }) => {
+            const sec = Math.round(delayMs / 1000);
+            process.stderr.write(`\r\x1b[K  ⏳ ${status || 'error'}, waiting ${sec}s... (retry ${attempt}/3)\r`);
+          },
         }
+      );
+    } catch (err: any) {
+      if (err?.__fallbackTriggered && model === 'mimo-v2.5-pro') {
+        debug('3x 429 on %s, falling back to mimo-v2.5', model);
+        process.stderr.write(`\r\x1b[K  ⚠ ${model} rate limited, falling back to mimo-v2.5\r\n`);
+        createParams.model = 'mimo-v2.5';
+        const response = await this.client.messages.create(createParams);
+        this.trackUsage('mimo-v2.5', response.usage);
+        return response;
       }
-      throw this.wrapApiError(err, model);
+      throw err;
     }
   }
 
@@ -121,66 +131,70 @@ export class PayAsYouGoAdapter implements ApiAdapter {
       streamParams.max_tokens = Math.max(maxTokens, 64000);
     }
 
-    try {
-      let textEmitted = false;
-      const stream = this.client.messages.stream(streamParams);
+    return withRetry(
+      async () => {
+        let textEmitted = false;
+        const stream = this.client.messages.stream(streamParams);
 
-      // Stream thinking in real-time for smooth display
-      let thinkingBuffer = '';
-      let thinkingFlushTimer: NodeJS.Timeout | null = null;
-      const FLUSH_INTERVAL = 50;
+        let thinkingBuffer = '';
+        let thinkingFlushLen = 0;
+        let thinkingFlushTimer: NodeJS.Timeout | null = null;
+        const FLUSH_INTERVAL = 100;
 
-      const flushThinking = () => {
-        if (thinkingBuffer) {
-          callbacks.onThinking?.(thinkingBuffer);
-          thinkingBuffer = '';
-        }
-        thinkingFlushTimer = null;
-      };
-
-      stream.on('text', (text) => {
-        textEmitted = true;
-        flushThinking();
-        callbacks.onText?.(text);
-      });
-
-      stream.on('thinking', (thinkingDelta: string) => {
-        thinkingBuffer += thinkingDelta;
-        if (!thinkingFlushTimer) {
-          thinkingFlushTimer = setTimeout(flushThinking, FLUSH_INTERVAL);
-        }
-      });
-
-      stream.on('contentBlock', (block) => {
-        if (block.type === 'tool_use') {
-          callbacks.onToolUse?.(block as Anthropic.ToolUseBlock);
-        }
-        if (thinkingFlushTimer) {
-          clearTimeout(thinkingFlushTimer);
+        const flushThinking = () => {
+          if (thinkingBuffer.length > thinkingFlushLen) {
+            const delta = thinkingBuffer.slice(thinkingFlushLen);
+            thinkingFlushLen = thinkingBuffer.length;
+            callbacks.onThinking?.(delta);
+          }
           thinkingFlushTimer = null;
-        }
-        flushThinking();
-      });
+        };
 
-      try {
-        const finalMessage = await stream.finalMessage();
-        this.trackUsage(model, finalMessage.usage);
-        return finalMessage;
-      } catch (innerErr: any) {
-        if (textEmitted && innerErr?.status === 429) {
-          const err = new Error('429_rate_limit: Partial response already sent.');
-          (err as any).__noRetry = true;
-          throw err;
+        stream.on('text', (text) => {
+          textEmitted = true;
+          flushThinking();
+          callbacks.onText?.(text);
+        });
+
+        stream.on('thinking', (thinkingDelta: string) => {
+          thinkingBuffer += thinkingDelta;
+          if (!thinkingFlushTimer) {
+            thinkingFlushTimer = setTimeout(flushThinking, FLUSH_INTERVAL);
+          }
+        });
+
+        stream.on('contentBlock', (block) => {
+          if (block.type === 'tool_use') {
+            callbacks.onToolUse?.(block as Anthropic.ToolUseBlock);
+          }
+          if (thinkingFlushTimer) {
+            clearTimeout(thinkingFlushTimer);
+            thinkingFlushTimer = null;
+          }
+          flushThinking();
+        });
+
+        try {
+          const finalMessage = await stream.finalMessage();
+          this.trackUsage(model, finalMessage.usage);
+          return finalMessage;
+        } catch (innerErr: any) {
+          if (textEmitted && innerErr?.status === 429) {
+            const err = new Error('429_rate_limit: Partial response already sent.');
+            (err as any).__noRetry = true;
+            throw err;
+          }
+          throw innerErr;
         }
-        throw innerErr;
+      },
+      {
+        label: `stream(${model})`,
+        onRetry: ({ attempt, delayMs, status }) => {
+          const sec = Math.round(delayMs / 1000);
+          process.stderr.write(`\r\x1b[K  ⏳ stream ${status || 'error'}, waiting ${sec}s... (retry ${attempt}/10)\r`);
+        },
       }
-    } catch (err: any) {
-      if (err?.status === 429) {
-        debug('Streaming got 429, falling back to non-streaming');
-        return this.chat(messages, tools, systemPrompt, options);
-      }
-      throw this.wrapApiError(err, model);
-    }
+    );
   }
 
   getBudgetInfo(): BudgetInfo {
@@ -215,7 +229,6 @@ export class PayAsYouGoAdapter implements ApiAdapter {
     if (!this.config.promptCaching.enabled) {
       return [{ type: 'text', text: systemPrompt }];
     }
-
     return [
       {
         type: 'text',
@@ -238,32 +251,5 @@ export class PayAsYouGoAdapter implements ApiAdapter {
       ((usage as any).cache_read_input_tokens / 1_000_000 || 0) * pricing.cacheRead +
       ((usage as any).cache_creation_input_tokens / 1_000_000 || 0) * pricing.cacheWrite;
     this.usage.totalCost += cost;
-  }
-
-  private wrapApiError(err: any, model?: string): Error {
-    const status = err?.status || err?.statusCode || err?.error?.status;
-    const message = err?.message || String(err);
-    debug('API error → status: %d, model: %s, message: %s', status, model ?? 'unknown', message.slice(0, 100));
-
-    if (status === 401 || message.includes('401')) {
-      return new Error('API key is invalid or expired. Run "mimo init" to reconfigure.');
-    }
-    if (status === 403 || message.includes('403')) {
-      return new Error('API key does not have permission for this operation.');
-    }
-    if (status === 404 || message.includes('404')) {
-      const modelHint = model ? ` Model "${model}" may not be available.` : '';
-      return new Error(`API endpoint or model not found.${modelHint}`);
-    }
-    if (status === 429 || message.includes('429')) {
-      return new Error('429_rate_limit: Rate limit exceeded after retries. Please wait a moment and try again.');
-    }
-    if (status === 529 || message.includes('529')) {
-      return new Error('529_overloaded: API is temporarily overloaded.');
-    }
-    if (message.includes('ECONNREFUSED') || message.includes('ENOTFOUND')) {
-      return new Error(`Cannot reach API at ${this.config.api.payAsYouGo.baseUrl}. Check your network and base URL.`);
-    }
-    return new Error(`API error: ${message}`);
   }
 }

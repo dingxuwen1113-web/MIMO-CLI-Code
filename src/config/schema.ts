@@ -27,12 +27,6 @@ export const ApiModeSchema = z.enum(['token-plan', 'pay-as-you-go']);
 export const AgentModeSchema = z.enum(['plan', 'agent', 'custom', 'yolo']);
 export const ModelIdSchema = z.enum(['mimo-v2.5-pro', 'mimo-v2.5', 'auto']);
 
-export const RateLimitConfigSchema = z.object({
-  requestsPerMinute: z.number().int().min(1).max(10000).default(60),
-  minIntervalMs: z.number().min(0).max(60000).default(1000),
-  maxRetries: z.number().int().min(0).max(10).default(3),
-}).strict();
-
 export const TokenPlanConfigSchema = z.object({
   apiKey: z.string().default(''),
   baseUrl: z.string().default(''),
@@ -55,7 +49,6 @@ export const ApiConfigSchema = z.object({
   ollamaEndpoint: z.string().default('http://localhost:11434'),
   openaiEndpoint: z.string().default(''),
   openaiApiKey: z.string().default(''),
-  rateLimit: RateLimitConfigSchema.default({}),
 }).strict();
 
 export const AgentConfigSchema = z.object({
@@ -108,7 +101,6 @@ export const MimoConfigSchema = z.object({
 
 // ── TypeScript Interfaces (derived from zod schemas) ──────────────
 
-export type RateLimitConfig = z.infer<typeof RateLimitConfigSchema>;
 export type TokenPlanConfig = z.infer<typeof TokenPlanConfigSchema>;
 export type PayAsYouGoConfig = z.infer<typeof PayAsYouGoConfigSchema>;
 export type ApiConfig = z.infer<typeof ApiConfigSchema>;
@@ -217,31 +209,6 @@ export function validateApiConfig(api: Partial<ApiConfig>): ValidationError[] {
   }
   if (api.payAsYouGo) {
     errors.push(...validatePayAsYouGoConfig(api.payAsYouGo));
-  }
-  if (api.rateLimit) {
-    errors.push(...validateRateLimitConfig(api.rateLimit));
-  }
-
-  return errors;
-}
-
-export function validateRateLimitConfig(rl: Partial<RateLimitConfig>): ValidationError[] {
-  const errors: ValidationError[] = [];
-
-  if (rl.requestsPerMinute !== undefined) {
-    if (typeof rl.requestsPerMinute !== 'number' || !Number.isInteger(rl.requestsPerMinute) || rl.requestsPerMinute < 1) {
-      errors.push({ path: 'api.rateLimit.requestsPerMinute', message: 'Must be a positive integer' });
-    }
-  }
-  if (rl.minIntervalMs !== undefined) {
-    if (typeof rl.minIntervalMs !== 'number' || !isFinite(rl.minIntervalMs) || rl.minIntervalMs < 0) {
-      errors.push({ path: 'api.rateLimit.minIntervalMs', message: 'Must be a non-negative finite number' });
-    }
-  }
-  if (rl.maxRetries !== undefined) {
-    if (typeof rl.maxRetries !== 'number' || !Number.isInteger(rl.maxRetries) || rl.maxRetries < 0) {
-      errors.push({ path: 'api.rateLimit.maxRetries', message: 'Must be a non-negative integer' });
-    }
   }
 
   return errors;
@@ -404,10 +371,6 @@ export const CONFIG_KEY_MAP: Record<string, { description: string; type: 'string
   'api.payAsYouGo.apiKey':      { description: 'Pay-as-you-go API key', type: 'string' },
   'api.payAsYouGo.baseUrl':     { description: 'Pay-as-you-go base URL', type: 'string' },
   'api.payAsYouGo.maxTokensPerTurn': { description: 'Max tokens per turn', type: 'number' },
-  // Rate limit section
-  'api.rateLimit.requestsPerMinute': { description: 'Max requests per minute', type: 'number' },
-  'api.rateLimit.minIntervalMs':     { description: 'Minimum interval between requests (ms)', type: 'number' },
-  'api.rateLimit.maxRetries':        { description: 'Max retries on failure', type: 'number' },
   // Agent section
   'agent.mode':             { description: 'Agent mode (plan | agent | yolo)', type: 'string' },
   'agent.maxTurns':         { description: 'Max agent turns', type: 'number' },

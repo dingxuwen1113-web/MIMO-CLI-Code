@@ -130,7 +130,7 @@ program
         const tools = new ToolRegistry('yolo');
         const skills = new SkillRegistry();
         await skills.init();
-        const router = new ModelRouter(config.api.model);
+        const router = new ModelRouter(config.api.model, config.api.tokenPlan.baseUrl || config.api.payAsYouGo.baseUrl);
         const charter = new Charter();
 
         const dynamicAgents = new DynamicAgentLoader();

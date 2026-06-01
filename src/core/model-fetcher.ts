@@ -1,7 +1,5 @@
 // ── 实时模型列表获取 ──────────────────────────────
 
-import Anthropic from '@anthropic-ai/sdk';
-
 export interface ModelInfo {
   id: string;
   name: string;
@@ -34,13 +32,10 @@ const FALLBACK_MODELS: ModelInfo[] = [
 // 从 API 实时获取可用模型列表
 export async function fetchAvailableModels(apiKey: string, baseUrl?: string): Promise<ModelInfo[]> {
   try {
-    const clientOpts: Record<string, any> = { apiKey };
-    if (baseUrl) clientOpts.baseURL = baseUrl;
-
-    const client = new Anthropic(clientOpts as any);
+    const normalizedUrl = (baseUrl || 'https://api.anthropic.com').replace(/\/+$/, '');
 
     // 尝试获取模型列表（Anthropic API）
-    const response = await fetch(`${baseUrl || 'https://api.anthropic.com'}/v1/models`, {
+    const response = await fetch(`${normalizedUrl}/v1/models`, {
       headers: {
         'x-api-key': apiKey,
         'anthropic-version': '2023-06-01',
@@ -67,7 +62,7 @@ export async function fetchAvailableModels(apiKey: string, baseUrl?: string): Pr
 
     // API 不支持 /v1/models，尝试 mimo 代理
     if (baseUrl?.includes('mimo')) {
-      const mimoResponse = await fetch(`${baseUrl}/v1/models`, {
+      const mimoResponse = await fetch(`${normalizedUrl}/v1/models`, {
         headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
         signal: AbortSignal.timeout(5000),
       }).catch(() => null);
