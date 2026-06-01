@@ -348,19 +348,11 @@ export class MimoSDK {
       }
 
       // 2. Apply SDK overrides on top of base config
-      const apiKey = this.config.apiKey ?? process.env.ANTHROPIC_API_KEY ?? '';
+      const apiKey = this.config.apiKey ?? process.env.ANTHROPIC_AUTH_TOKEN ?? '';
       const baseUrl = this.config.baseUrl ?? process.env.ANTHROPIC_BASE_URL ?? '';
-      const model = this.config.model ?? process.env.MIMO_MODEL ?? baseConfig.api.model;
+      const model = this.config.model ?? process.env.ANTHROPIC_MODEL ?? baseConfig.api.model;
       const mode = this.config.mode ?? (process.env.MIMO_MODE as AgentMode) ?? baseConfig.agent.mode;
 
-      if (apiKey) {
-        baseConfig.api.tokenPlan.apiKey = apiKey;
-        baseConfig.api.payAsYouGo.apiKey = apiKey;
-      }
-      if (baseUrl) {
-        baseConfig.api.tokenPlan.baseUrl = baseUrl;
-        baseConfig.api.payAsYouGo.baseUrl = baseUrl;
-      }
       baseConfig.api.model = model as ModelId;
       baseConfig.agent.mode = mode as AgentMode;
       baseConfig.api.stream = false; // SDK manages its own stream logic
@@ -372,13 +364,13 @@ export class MimoSDK {
       this.mimoConfig = baseConfig;
 
       // 3. Validate API key
-      const effectiveKey = baseConfig.api.tokenPlan.apiKey || baseConfig.api.payAsYouGo.apiKey;
+      const effectiveKey = apiKey || process.env.ANTHROPIC_AUTH_TOKEN;
       if (!effectiveKey) {
         throw new MimoAuthError();
       }
 
       // 4. Create API client
-      this.apiClient = createApiClient(baseConfig);
+      this.apiClient = await createApiClient(baseConfig);
 
       // 5. Create tool registry (auto-approve all tools for headless operation)
       this.toolRegistry = new ToolRegistry(baseConfig.agent.mode);

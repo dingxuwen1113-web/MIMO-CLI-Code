@@ -123,14 +123,14 @@ program
 
       // ── Non-interactive mode ──────────────────────────
       if (isNonInteractive) {
-        const apiClient = createApiClient(config);
+        const apiClient = await createApiClient(config);
         const memory = new MemoryStore(path.join(os.homedir(), '.mimo', 'memory'));
         await memory.init();
         const extractor = new MemoryExtractor(apiClient);
         const tools = new ToolRegistry('yolo');
         const skills = new SkillRegistry();
         await skills.init();
-        const router = new ModelRouter(config.api.model, config.api.tokenPlan.baseUrl || config.api.payAsYouGo.baseUrl);
+        const router = new ModelRouter(config.api.model, process.env.ANTHROPIC_BASE_URL || '');
         const charter = new Charter();
 
         const dynamicAgents = new DynamicAgentLoader();
@@ -212,7 +212,7 @@ program
       // ── Interactive mode (original flow) ──────────────
       printBanner(config);
 
-      const apiClient = createApiClient(config);
+      const apiClient = await createApiClient(config);
       const memory = new MemoryStore(path.join(os.homedir(), '.mimo', 'memory'));
       await memory.init();
 

@@ -65,6 +65,167 @@ MIMO CLI 内置 55 项创新功能，分为五大层级：
 - 支持导入/导出记忆（`mimo memory export`）
 - 每 5 轮自动执行记忆提取
 
+### 🧬 自主进化系统
+
+**Autonomous Evolution Agent** — 当软件启动时自动运行的智能学习系统：
+
+- **自动学习项目结构** — 分析 package.json、依赖关系、脚本配置
+- **Web 技术学习** — 访问网络学习最新的编程最佳实践和工具
+- **代码模式分析** — 自动检测项目中的设计模式和编码规范
+- **文件洞察提取** — 读取所有重要文件并提取关键信息
+- **自动更新 README** — 将学习成果自动写入 README.md 的进化日志
+- **记忆持久化** — 所有学习内容保存到 `.mimo/evolution-memory.json`
+
+进化过程完全自动化，无需用户干预。启动软件即开始学习。
+
+### 📚 Agent知识库系统
+
+**Agent Knowledge Base** — 统一的知识库，所有Agent都可以通过知识库进行升级：
+
+- **统一知识存储** — 所有知识集中存储在 `.mimo/knowledge-base.json`
+- **智能知识推荐** — 根据Agent的专业领域推荐相关知识
+- **Agent升级机制** — Agent通过学习知识库中的内容来提升能力
+- **知识分类管理** — 按类别、标签、来源组织知识
+- **使用统计追踪** — 记录知识的使用频率和效果
+- **自动清理机制** — 自动清理过期和低价值知识
+
+**知识来源**：
+- 🌐 **Web学习** — 从网络学习最新技术
+- 💻 **代码分析** — 从项目代码中提取模式
+- 📖 **文档阅读** — 从技术文档中学习
+- 👨‍🏫 **专家知识** — 从行业专家的知识中学习
+- 👤 **用户交互** — 从用户交互中学习
+
+**Agent升级方式**：
+```bash
+# 查看知识库统计
+/knowledge stats
+
+# 搜索知识
+/knowledge search React性能优化
+
+# 导出知识库
+/knowledge export markdown
+
+# 查看可用升级
+/upgrade list
+
+# 自动升级指定Agent
+/upgrade auto frontend-react-expert
+
+# 批量升级所有专家
+/upgrade auto-all
+```
+
+**知识库特性**：
+- ✅ **智能推荐** — 根据Agent专业领域推荐知识
+- ✅ **自动学习** — Agent启动时自动从知识库学习
+- ✅ **效果追踪** — 记录知识应用的效果
+- ✅ **版本管理** — 知识更新时保留历史版本
+- ✅ **共享机制** — 知识可在多个Agent间共享
+
+### 🖥️ 内置代码编辑器
+
+**Built-in Code Editor** — 在软件内部直接编程、编译、测试，通过AI智能修复错误：
+
+- **多语言支持** — 支持12种主流编程语言
+- **代码编辑** — 创建、编辑、保存代码文件
+- **编译检查** — 实时编译检查，发现语法和类型错误
+- **运行测试** — 直接运行代码和测试
+- **AI智能修复** — 通过大模型自动分析和修复错误
+- **错误诊断** — 精确定位错误位置和原因
+
+**支持的编程语言**：
+
+| 语言 | 扩展名 | 编译 | 运行 | 测试 |
+|------|--------|------|------|------|
+| TypeScript | .ts | ✅ tsc | ✅ tsx | ✅ vitest |
+| JavaScript | .js | - | ✅ node | ✅ jest |
+| Python | .py | - | ✅ python3 | ✅ pytest |
+| Rust | .rs | ✅ cargo build | ✅ cargo run | ✅ cargo test |
+| Go | .go | ✅ go build | ✅ go run | ✅ go test |
+| Java | .java | ✅ javac | ✅ java | ✅ mvn test |
+| C++ | .cpp | ✅ g++ | ✅ ./output | ✅ ctest |
+| C# | .cs | ✅ dotnet build | ✅ dotnet run | ✅ dotnet test |
+| Ruby | .rb | - | ✅ ruby | ✅ minitest |
+| PHP | .php | - | ✅ php | ✅ phpunit |
+| Swift | .swift | ✅ swiftc | ✅ swift | ✅ swift test |
+| Kotlin | .kt | ✅ kotlinc | ✅ kotlin | ✅ gradle test |
+
+**使用方式**：
+```bash
+# 创建/打开文件
+/editor open main.ts              # 创建TypeScript文件
+/editor open app.py python        # 创建Python文件
+/editor open lib.rs rust          # 创建Rust文件
+
+# 编辑代码
+/editor edit console.log("Hello World")
+/editor edit def main(): print("Hi")
+
+# 保存文件
+/editor save
+
+# 编译检查
+/editor compile                   # 检查语法和类型错误
+
+# 运行代码
+/editor run                       # 运行当前文件
+/editor run arg1 arg2             # 带参数运行
+
+# 运行测试
+/editor test                      # 运行测试套件
+
+# AI智能修复
+/editor repair                    # AI分析错误并生成修复建议
+/editor apply <id>                # 应用指定修复建议
+/editor apply-all                 # 应用所有高置信度修复
+
+# 查看状态
+/editor status                    # 查看当前文件和编辑器状态
+```
+
+**AI智能修复功能**：
+- ✅ **自动错误分析** — 分析编译错误类型和原因
+- ✅ **智能修复建议** — 生成针对性的修复代码
+- ✅ **置信度评估** — 评估修复建议的可靠性
+- ✅ **一键应用** — 快速应用修复建议
+- ✅ **批量修复** — 批量应用所有高置信度修复
+- ✅ **重新编译验证** — 应用修复后自动重新编译
+
+**错误类型支持**：
+- 缺失导入 (missing_import)
+- 未定义变量 (undefined_variable)
+- 类型错误 (type_error)
+- 语法错误 (syntax_error)
+- 空引用错误 (null_reference)
+- 缺失参数 (missing_argument)
+- 异步错误 (async_error)
+
+**示例工作流**：
+```bash
+# 1. 创建新文件
+/editor open calculator.ts
+
+# 2. 编写代码
+/editor edit function add(a: number, b: number): number { return a + b; }
+
+# 3. 编译检查
+/editor compile
+
+# 4. 发现错误？AI修复
+/editor repair
+
+# 5. 应用修复
+/editor apply-all
+
+# 6. 运行测试
+/editor test
+
+# 7. 保存
+/editor save
+```
+
 ### 安全体系
 
 - **命令注入检测** — 阻止危险 shell 命令
@@ -318,6 +479,137 @@ npm run clean
 - **测试**: `vitest`
 - **Diff**: `diff` 库
 - **浏览器自动化**: `playwright`（可选）
+
+## 自主进化系统
+
+MIMO CLI 内置自主进化Agent，会在每次启动时自动运行：
+
+### 进化流程
+
+1. **项目结构学习** — 读取 package.json，分析依赖和配置
+2. **Web 技术学习** — 搜索最新的编程最佳实践
+3. **代码模式分析** — 检测项目中的设计模式
+4. **文件洞察提取** — 读取重要文件并提取关键信息
+5. **README 更新** — 自动将学习成果写入 README.md
+
+### 存储位置
+
+- 进化记忆: `.mimo/evolution-memory.json`
+- 项目洞察: `.mimo/project-insights.json`
+- 学习技能: `.mimo/learned-skills.json`
+- 知识库: `.mimo/knowledge-base.json`
+- 学习目标: `.mimo/learning-goals.json`
+- README 日志: `README.md` 的 `
+
+
+
+
+
+
+
+
+
+
+
+
+
+## 🧬 自主进化日志
+
+*最后更新: 2026-06-01T14:08:30.848Z*
+
+### 学习记忆
+
+- **Node.js performance optimization** (web) - 2026-06-01
+- **AI coding assistant features** (web) - 2026-06-01
+- **TypeScript best practices 2026** (web) - 2026-06-01
+- **Node.js performance optimization** (web) - 2026-06-01
+- **AI coding assistant features** (web) - 2026-06-01
+
+### 项目洞察
+
+- **patterns**: 异步编程模式, TypeScript类型系统, 模块化导出, OOP类模式...
+- **documentation**: README.md: # MIMO CLI Code
+
+**Xiaomi Terminal AI Coding Agent** — 终端 AI 编程智能体，由 MiMO AI 驱动。
+
+MIM...
+- **documentation**: LICENSE: MIT License
+
+Copyright (c) 2026 酒樽
+
+Permission is hereby granted, free of charge, to an...
+- **documentation**: .env.example: # MIMO CLI 环境变量配置
+# 使用官方Anthropic SDK连接方式
+
+# API端点（必须）
+ANTHROPIC_BASE_URL=https://toke...
+- **file_structure**: 源码文件数量: 269 个 TypeScript 文件...
+
+---
+*由 Evolution Agent 自动生成*
+
+## 👥 行业专家系统
+
+MIMO CLI 内置 **18 位行业专家**，覆盖各行各业，随时可以调用：
+
+### 可用专家列表
+
+| 行业 | 专家 | 专业领域 |
+|------|------|----------|
+| **前端开发** | React 专家 | React, Next.js, Redux, SSR |
+| **后端开发** | Node.js 专家 | Express, NestJS, GraphQL, 数据库 |
+| **全栈开发** | Next.js 专家 | Server Components, 全栈架构 |
+| **DevOps** | DevOps 专家 | Docker, K8s, CI/CD, 云原生 |
+| **数据工程** | 数据库专家 | PostgreSQL, MongoDB, Redis, 优化 |
+| **安全** | 网络安全专家 | OWASP, 渗透测试, 密码学 |
+| **移动端** | React Native 专家 | 跨平台开发, 性能优化 |
+| **人工智能** | AI/ML 专家 | PyTorch, LLM, RAG, MLOps |
+| **数据工程** | 数据工程专家 | Spark, Airflow, Kafka, ETL |
+| **云计算** | 云架构专家 | AWS, Azure, GCP, Serverless |
+| **质量保证** | 测试工程专家 | Jest, Cypress, TDD, BDD |
+| **性能工程** | 性能优化专家 | Core Web Vitals, 缓存, CDN |
+| **Web3** | 区块链专家 | Solidity, DeFi, 智能合约 |
+| **游戏开发** | 游戏开发专家 | Unity, Unreal, 多人游戏 |
+| **物联网** | 嵌入式/IoT 专家 | Arduino, MQTT, 边缘计算 |
+| **产品管理** | 产品管理专家 | 策略, 用户研究, 敏捷 |
+| **技术文档** | 技术写作专家 | API 文档, 用户指南, 教程 |
+
+### 使用方式
+
+**自动匹配** — 输入相关关键词，系统自动匹配最佳专家：
+
+```
+"帮我优化React组件性能"  → React 专家
+"设计一个RESTful API"   → Node.js 后端专家
+"部署到Kubernetes"      → DevOps 专家
+"修复SQL查询性能"       → 数据库专家
+"进行安全审计"          → 网络安全专家
+```
+
+**手动查看** — 使用命令查看所有专家：
+
+```
+/experts    — 列出所有行业专家
+/team       — 列出专家开发团队
+/evolution  — 查看进化系统状态
+/learn      — 查看学习报告
+```
+
+### 专家系统特性
+
+- ✅ **智能匹配** — 根据任务关键词自动匹配最佳专家
+- ✅ **专家推荐** — 推荐相关领域的其他专家
+- ✅ **使用统计** — 记录专家使用频率，优化推荐
+- ✅ **知识注入** — 专家知识自动注入到对话上下文
+- ✅ **持续学习** — 从每次交互中学习和积累
+
+### 专家知识库
+
+每位专家都包含：
+- **系统提示词** — 专业领域的工作原则和最佳实践
+- **专业技能** — 擅长的技术栈和工具
+- **行业知识** — 领域特定的知识和经验
+- **代码规范** — 编码标准和质量要求
 
 ## 项目结构
 
