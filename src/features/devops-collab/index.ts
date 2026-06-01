@@ -4,24 +4,187 @@ import { readFileSafe, getSourceFiles, runCommand, now_iso } from '../utils';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 
-// ═══ Feature 25: CI/CD Pipeline Optimizer ═══════════
+// ═══ Feature 25: CI/CD Pipeline Optimizer (Enhanced) ═══════════
+interface CIOptimization {
+  type: 'performance' | 'security' | 'reliability' | 'best-practice';
+  priority: 'critical' | 'high' | 'medium' | 'low';
+  message: string;
+  suggestion: string;
+  impact: string;
+}
+
+class CIOptimizer {
+  private optimizations: CIOptimization[] = [];
+
+  async analyze(projectDir: string): Promise<CIOptimization[]> {
+    this.optimizations = [];
+    const ciFiles = [
+      '.github/workflows/*.yml',
+      '.github/workflows/*.yaml',
+      '.gitlab-ci.yml',
+      'Jenkinsfile',
+      '.circleci/config.yml',
+      '.travis.yml',
+      'bitbucket-pipelines.yml',
+    ];
+
+    for (const pattern of ciFiles) {
+      const files = await getSourceFiles(projectDir, [pattern]);
+      for (const file of files) {
+        await this.analyzeCIFile(file);
+      }
+    }
+
+    return this.optimizations;
+  }
+
+  private async analyzeCIFile(filePath: string): Promise<void> {
+    const content = await readFileSafe(filePath);
+    if (!content) return;
+
+    // Performance optimizations
+    if (!content.includes('cache') && !content.includes('Cache')) {
+      this.optimizations.push({
+        type: 'performance',
+        priority: 'high',
+        message: 'Missing build cache configuration',
+        suggestion: 'Add caching for dependencies and build artifacts',
+        impact: '30-50% faster builds',
+      });
+    }
+
+    if (!content.includes('matrix') && !content.includes('parallel')) {
+      this.optimizations.push({
+        type: 'performance',
+        priority: 'medium',
+        message: 'Consider matrix builds for parallel testing',
+        suggestion: 'Use matrix strategy to run tests in parallel across multiple environments',
+        impact: '2-4x faster test execution',
+      });
+    }
+
+    if (content.includes('npm install') && !content.includes('npm ci')) {
+      this.optimizations.push({
+        type: 'reliability',
+        priority: 'high',
+        message: 'Use "npm ci" instead of "npm install" for CI',
+        suggestion: '"npm ci" is faster and ensures reproducible builds',
+        impact: '20-30% faster dependency installation',
+      });
+    }
+
+    if (!content.includes('timeout') && !content.includes('Timeout')) {
+      this.optimizations.push({
+        type: 'reliability',
+        priority: 'high',
+        message: 'No timeout configured — jobs could hang indefinitely',
+        suggestion: 'Add timeout-minutes to prevent hung jobs',
+        impact: 'Prevents resource waste from stuck jobs',
+      });
+    }
+
+    // Security optimizations
+    if (content.includes('secrets') || content.includes('SECRETS')) {
+      if (!content.includes('GITHUB_TOKEN') || !content.includes('permissions')) {
+        this.optimizations.push({
+          type: 'security',
+          priority: 'critical',
+          message: 'Missing permission restrictions',
+          suggestion: 'Add explicit permissions block to limit GITHUB_TOKEN scope',
+          impact: 'Reduces attack surface',
+        });
+      }
+    }
+
+    if (content.includes('actions/checkout@') && !content.includes('persist-credentials: false')) {
+      this.optimizations.push({
+        type: 'security',
+        priority: 'high',
+        message: 'Checkout action may persist credentials',
+        suggestion: 'Set persist-credentials: false in actions/checkout',
+        impact: 'Reduces credential exposure risk',
+      });
+    }
+
+    // Best practices
+    if (!content.includes('needs:') && !content.includes('depends')) {
+      this.optimizations.push({
+        type: 'best-practice',
+        priority: 'medium',
+        message: 'No job dependencies specified',
+        suggestion: 'Use "needs" to define job dependencies and enable parallel execution',
+        impact: 'Better workflow orchestration',
+      });
+    }
+
+    if (!content.includes('concurrency:') && !content.includes('group:')) {
+      this.optimizations.push({
+        type: 'performance',
+        priority: 'medium',
+        message: 'No concurrency control',
+        suggestion: 'Add concurrency group to cancel in-progress runs on same branch',
+        impact: 'Saves compute resources',
+      });
+    }
+  }
+
+  getOptimizations(): CIOptimization[] { return this.optimizations; }
+
+  getSummary(): { critical: number; high: number; medium: number; low: number; totalImpact: string } {
+    const counts = { critical: 0, high: 0, medium: 0, low: 0 };
+    for (const opt of this.optimizations) {
+      counts[opt.priority]++;
+    }
+    return {
+      ...counts,
+      totalImpact: `${this.optimizations.length} optimization opportunities identified`,
+    };
+  }
+}
+
+const ciOptimizer = new CIOptimizer();
+
 export const CIOptimizerFeature: FeatureModule = {
-  meta: { id: 'ci-optimizer', name: 'CI/CD Pipeline Optimizer', description: 'Analyze CI configs and suggest optimizations', category: 'devops', enabled: true, priority: 'P2' },
+  meta: { id: 'ci-optimizer', name: 'CI/CD Pipeline Optimizer', description: 'Analyze CI configs and suggest performance, security, and reliability optimizations', category: 'devops', enabled: true, priority: 'P2' },
   getTools() {
     return [{
       name: 'analyze_ci_pipeline',
-      definition: { name: 'analyze_ci_pipeline', description: 'Analyze CI/CD configuration for optimization opportunities', input_schema: { type: 'object' as const, properties: {} } },
-      execute: async () => {
-        const issues: string[] = [];
-        for (const ciFile of ['.github/workflows', '.gitlab-ci.yml', 'Jenkinsfile']) {
-          const content = await readFileSafe(path.join(process.cwd(), ciFile));
-          if (!content) continue;
-          if (!content.includes('cache')) issues.push('Missing build cache configuration');
-          if (!content.includes('matrix')) issues.push('Consider matrix builds for parallel testing');
-          if (content.includes('npm install') && !content.includes('npm ci')) issues.push('Use "npm ci" instead of "npm install" for CI');
-          if (!content.includes('timeout')) issues.push('No timeout configured — jobs could hang indefinitely');
+      definition: {
+        name: 'analyze_ci_pipeline',
+        description: 'Analyze CI/CD configuration for optimization opportunities',
+        input_schema: {
+          type: 'object' as const,
+          properties: {
+            summary: { type: 'boolean', description: 'Get summary instead of details' },
+          },
+        },
+      },
+      execute: async (input: any) => {
+        await ciOptimizer.analyze(process.cwd());
+
+        if (input.summary) {
+          const summary = ciOptimizer.getSummary();
+          return {
+            output: `CI/CD Optimization Summary:\n` +
+              `Critical: ${summary.critical}\n` +
+              `High: ${summary.high}\n` +
+              `Medium: ${summary.medium}\n` +
+              `Low: ${summary.low}\n\n` +
+              `${summary.totalImpact}`,
+            isError: false,
+          };
         }
-        return { output: issues.length > 0 ? issues.map(i => `• ${i}`).join('\n') : 'CI configuration looks optimized ✓', isError: false };
+
+        const optimizations = ciOptimizer.getOptimizations();
+        return {
+          output: optimizations.length > 0
+            ? optimizations.map(opt => {
+              const icon = opt.priority === 'critical' ? '🔴' : opt.priority === 'high' ? '🟡' : '🟢';
+              return `${icon} [${opt.type.toUpperCase()}] ${opt.message}\n  Suggestion: ${opt.suggestion}\n  Impact: ${opt.impact}`;
+            }).join('\n\n')
+            : 'CI configuration looks optimized ✓',
+          isError: false,
+        };
       },
     }];
   },
